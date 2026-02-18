@@ -19,13 +19,27 @@
 
         <div id="poster" class="poster" aria-hidden="true">
           <div class="poster-noise"></div>
-          <div class="poster-wordmark">SEBASTIAN</div>
+          <div class="poster-wordmark">
+            <svg
+              id="poster-wordmark-svg"
+              class="wordmark-svg"
+              role="presentation"
+              aria-hidden="true"
+            ></svg>
+          </div>
         </div>
 
         <canvas id="gl-canvas" class="scene-canvas" aria-hidden="true"></canvas>
         <canvas id="fallback-canvas" class="scene-canvas" aria-hidden="true"></canvas>
 
-        <div id="static-fallback" class="static-fallback" aria-hidden="true">SEBASTIAN</div>
+        <div id="static-fallback" class="static-fallback" aria-hidden="true">
+          <svg
+            id="static-wordmark-svg"
+            class="wordmark-svg"
+            role="presentation"
+            aria-hidden="true"
+          ></svg>
+        </div>
       </div>
     </section>
 

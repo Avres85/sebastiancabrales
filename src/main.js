@@ -1,7 +1,15 @@
 import * as THREE from 'https://unpkg.com/three@0.161.0/build/three.module.js';
-import { WORDMARK, createBaseSwarmPositions, createSeeds, createSebastianTargets } from './wordmark.js';
+import {
+  WORDMARK,
+  createBaseSwarmPositions,
+  createSeeds,
+  createSebastianTargets,
+  createSebastianWordmarkSvg,
+} from './wordmark.js';
+import { traceWordmarkFromPng } from './wordmark-trace.js';
 
-const MAX_CUBES = 1400;
+const MAX_CUBES = 3000;
+const CANVAS_CUBES = 620;
 const ACTIVE_SCROLL_VH = 160;
 const HOLD_SCROLL_VH = 20;
 const INTRO_HEIGHT_VH = 260;
@@ -9,7 +17,7 @@ const INTRO_HEIGHT_VH = 260;
 const QUALITY_TIERS = {
   low: {
     name: 'low',
-    count: 550,
+    count: 1200,
     dpr: 1.25,
     drift: 0.34,
     noise: 0.16,
@@ -17,7 +25,7 @@ const QUALITY_TIERS = {
   },
   medium: {
     name: 'medium',
-    count: 900,
+    count: 2250,
     dpr: 1.5,
     drift: 0.54,
     noise: 0.22,
@@ -25,7 +33,7 @@ const QUALITY_TIERS = {
   },
   high: {
     name: 'high',
-    count: 1400,
+    count: 3000,
     dpr: 2.0,
     drift: 0.72,
     noise: 0.3,
@@ -41,6 +49,8 @@ const elements = {
   glCanvas: document.getElementById('gl-canvas'),
   fallbackCanvas: document.getElementById('fallback-canvas'),
   staticFallback: document.getElementById('static-fallback'),
+  posterWordmarkSvg: document.getElementById('poster-wordmark-svg'),
+  staticWordmarkSvg: document.getElementById('static-wordmark-svg'),
 };
 
 const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -76,6 +86,7 @@ const app = {
   stopLoop: false,
   lastFrameTime: 0,
   firstLiveFrameShown: false,
+  atlasTexture: null,
   // WebGL runtime
   renderer: null,
   scene: null,
@@ -90,6 +101,10 @@ const app = {
   canvasBase: null,
   canvasTarget: null,
   canvasSeed: null,
+  // Wordmark source data
+  wordmarkSvgData: null,
+  wordmarkTargetsHigh: null,
+  wordmarkTargetsCanvas: null,
 };
 
 const VERTEX_SHADER = `
@@ -105,10 +120,14 @@ uniform float uNoise;
 uniform float uSweep;
 uniform float uReduced;
 uniform vec2 uPointer;
+uniform sampler2D uAtlas;
+uniform float uAtlasEnabled;
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying float vLock;
+varying vec3 vLocalPos;
+varying vec3 vLocalNormal;
 
 float sstep(float a, float b, float x) {
   float t = clamp((x - a) / (b - a), 0.0, 1.0);
@@ -146,6 +165,7 @@ void main() {
   float build = sstep(0.20, 0.45, p);
   float converge = sstep(0.45, 0.80, p);
   float lock = sstep(0.80, 1.00, p);
+  float lockTighten = sstep(0.72, 1.00, p);
   float reduced = step(0.5, uReduced);
 
   vec3 rand = hash3(aSeed);
@@ -183,7 +203,10 @@ void main() {
   float spin = (uTime * 0.23 + aSeed * 0.014) * (1.0 - lock * 0.82) * (1.0 - reduced);
   mat3 rot = rotY(spin) * rotX(spin * 0.58 + rand.x) * rotZ(spin * 0.39 + rand.y);
 
-  vec3 local = position * (0.15 * aScale);
+  float convergenceScale = mix(1.0, .325, lockTighten);
+  vec3 local = position * (0.15 * aScale * convergenceScale);
+  vLocalPos = position;
+  vLocalNormal = normal;
   vec3 transformed = rot * local + finalPos;
 
   vec4 world = modelMatrix * vec4(transformed, 1.0);
@@ -201,37 +224,107 @@ precision highp float;
 uniform float uTime;
 uniform float uProgress;
 uniform float uSweep;
+uniform sampler2D uAtlas;
+uniform float uAtlasEnabled;
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying float vLock;
+varying vec3 vLocalPos;
+varying vec3 vLocalNormal;
+
+vec2 atlasCellUv(vec2 uv, vec2 cell) {
+  vec2 grid = vec2(3.0, 4.0);
+  float pad = 0.012;
+  uv = clamp(uv, pad, 1.0 - pad);
+  return (cell + uv) / grid;
+}
+
+vec2 cubeAtlasUv(vec3 pos, vec3 nrm) {
+  vec3 an = abs(nrm);
+  vec2 uv;
+  vec2 cell;
+
+  if (an.x >= an.y && an.x >= an.z) {
+    if (nrm.x > 0.0) {
+      // +X face
+      uv = vec2(-pos.z, pos.y) * 0.5 + 0.5;
+      cell = vec2(2.0, 1.0);
+    } else {
+      // -X face
+      uv = vec2(pos.z, pos.y) * 0.5 + 0.5;
+      cell = vec2(0.0, 1.0);
+    }
+  } else if (an.y >= an.x && an.y >= an.z) {
+    if (nrm.y > 0.0) {
+      // +Y face
+      uv = vec2(pos.x, pos.z) * 0.5 + 0.5;
+      cell = vec2(1.0, 0.0);
+    } else {
+      // -Y face
+      uv = vec2(pos.x, -pos.z) * 0.5 + 0.5;
+      cell = vec2(1.0, 2.0);
+    }
+  } else {
+    if (nrm.z > 0.0) {
+      // +Z face
+      uv = vec2(pos.x, pos.y) * 0.5 + 0.5;
+      cell = vec2(1.0, 1.0);
+    } else {
+      // -Z face
+      uv = vec2(-pos.x, pos.y) * 0.5 + 0.5;
+      cell = vec2(1.0, 3.0);
+    }
+  }
+
+  return atlasCellUv(uv, cell);
+}
 
 void main() {
   vec3 n = normalize(vWorldNormal);
   vec3 v = normalize(cameraPosition - vWorldPos);
 
   float facing = max(dot(n, v), 0.0);
-  float fresnel = pow(1.0 - facing, 2.75);
+  float fresnel = pow(1.0 - facing, 2.45);
   vec3 reflected = reflect(-v, n);
 
-  float specHard = pow(max(dot(reflected, normalize(vec3(0.24, 0.75, 0.6))), 0.0), 22.0);
-  float specSoft = pow(max(dot(reflected, normalize(vec3(-0.5, 0.36, 0.9))), 0.0), 9.0);
+  float specHard = pow(max(dot(reflected, normalize(vec3(0.24, 0.75, 0.6))), 0.0), 34.0);
+  float specSoft = pow(max(dot(reflected, normalize(vec3(-0.5, 0.36, 0.9))), 0.0), 10.0);
 
-  vec3 steel0 = vec3(0.11, 0.13, 0.16);
-  vec3 steel1 = vec3(0.34, 0.38, 0.44);
-  vec3 steel2 = vec3(0.80, 0.85, 0.91);
+  vec3 steel0 = vec3(0.095, 0.112, 0.138);
+  vec3 steel1 = vec3(0.33, 0.37, 0.43);
+  vec3 steel2 = vec3(0.86, 0.9, 0.95);
+  vec3 steelCool = vec3(0.58, 0.69, 0.8);
 
   float verticalGrad = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
   vec3 chrome = mix(steel0, steel1, verticalGrad);
-  chrome = mix(chrome, steel2, specSoft * 0.74 + specHard * 0.45);
+  float brushed = sin(vWorldPos.y * 48.0 + vWorldPos.x * 9.0 + uTime * 0.2) * 0.5 + 0.5;
+  float brushedMask = brushed * 0.065;
+  chrome += vec3(brushedMask);
+  chrome = mix(chrome, steelCool, fresnel * 0.22);
+  chrome = mix(chrome, steel2, specSoft * 0.88 + specHard * 0.6);
+
+  if (uAtlasEnabled > 0.5) {
+    vec2 atlasUv = cubeAtlasUv(vLocalPos, vLocalNormal);
+    vec3 atlas = texture2D(uAtlas, atlasUv).rgb;
+    float atlasLuma = dot(atlas, vec3(0.2126, 0.7152, 0.0722));
+    vec3 etched = mix(vec3(0.74), vec3(1.3), atlasLuma);
+    chrome *= etched;
+    chrome += atlas * 0.06;
+  }
 
   float lock = smoothstep(0.80, 1.0, uProgress);
+  float preFlash = smoothstep(0.74, 0.90, uProgress) * (1.0 - smoothstep(0.90, 0.99, uProgress));
   float sweepPos = mix(-28.0, 28.0, smoothstep(0.80, 1.0, uProgress));
-  float sweepBand = exp(-pow((vWorldPos.x - sweepPos) * 0.27, 2.0));
+  float sweepBand = exp(-pow((vWorldPos.x - sweepPos) * 0.52, 2.0));
   float sweep = sweepBand * lock * uSweep;
 
-  vec3 cyan = vec3(0.15, 0.68, 0.9) * (fresnel * 0.3 + sweep * 0.55);
-  vec3 color = chrome + cyan + vec3(specHard * 0.25 + sweep * 0.24);
+  float lockAura = lock * (0.18 + fresnel * 0.62);
+  float flashBand = exp(-pow((vWorldPos.x - sweepPos * 0.72) * 0.33, 2.0));
+  float flash = preFlash * flashBand * (0.75 + fresnel * 0.45) * uSweep;
+  float polish = mix(0.0, 0.22, lock);
+  vec3 cyan = vec3(0.15, 0.68, 0.9) * (fresnel * 0.38 + sweep * 1.15 + lockAura + flash * 1.45);
+  vec3 color = chrome + cyan + vec3(specHard * (0.34 + polish) + sweep * 0.54 + lock * 0.14 + fresnel * 0.08);
 
   gl_FragColor = vec4(color, 0.98);
 }
@@ -358,15 +451,18 @@ function buildInstancedMesh() {
   geometry.attributes.normal = baseGeometry.attributes.normal;
 
   const basePositions = createBaseSwarmPositions(MAX_CUBES, 101);
-  const targetPositions = createSebastianTargets({
-    targetCount: MAX_CUBES,
-    sampleStep: 0.032,
-    letterSpacing: 0.26,
-    widthScale: 1.15,
-    height: 1.3,
-    depthJitter: 0.06,
-    seed: 73,
-  });
+  const targetPositions =
+    app.wordmarkTargetsHigh && app.wordmarkTargetsHigh.length === MAX_CUBES * 3
+      ? app.wordmarkTargetsHigh
+      : createSebastianTargets({
+          targetCount: MAX_CUBES,
+          sampleStep: 0.032,
+          minSpacing: 0.021,
+          tracking: 0.08,
+          height: 1.3,
+          depthJitter: 0.045,
+          seed: 73,
+        });
   const seeds = createSeeds(MAX_CUBES, 31);
   const scales = createSeeds(MAX_CUBES, 49);
 
@@ -390,6 +486,8 @@ function buildInstancedMesh() {
     uSweep: { value: getTier().sweep },
     uReduced: { value: app.prefersReducedMotion ? 1 : 0 },
     uPointer: { value: new THREE.Vector2(0, 0) },
+    uAtlas: { value: app.atlasTexture },
+    uAtlasEnabled: { value: app.atlasTexture ? 1 : 0 },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -509,17 +607,20 @@ function initCanvasFallback() {
   }
 
   app.canvasCtx = ctx;
-  app.canvasBase = createBaseSwarmPositions(260, 223);
-  app.canvasTarget = createSebastianTargets({
-    targetCount: 260,
-    sampleStep: 0.039,
-    letterSpacing: 0.26,
-    widthScale: 1.15,
-    height: 1.28,
-    depthJitter: 0.02,
-    seed: 13,
-  });
-  app.canvasSeed = createSeeds(260, 811);
+  app.canvasBase = createBaseSwarmPositions(CANVAS_CUBES, 223);
+  app.canvasTarget =
+    app.wordmarkTargetsCanvas && app.wordmarkTargetsCanvas.length === CANVAS_CUBES * 3
+      ? app.wordmarkTargetsCanvas
+      : createSebastianTargets({
+          targetCount: CANVAS_CUBES,
+          sampleStep: 0.039,
+          minSpacing: 0.026,
+          tracking: 0.08,
+          height: 1.28,
+          depthJitter: 0.015,
+          seed: 13,
+        });
+  app.canvasSeed = createSeeds(CANVAS_CUBES, 811);
 
   app.rendererType = 'canvas';
   setRenderMode('canvas');
@@ -688,12 +789,12 @@ function renderCanvasFallback(nowMs) {
     const perspective = 22 / (22 + z + 14);
     const screenX = width * 0.5 + x * scale * perspective;
     const screenY = height * 0.5 - y * scale * perspective;
-    const size = (1.4 + (seed % 1.2)) * perspective;
+    const size = (1.4 + (seed % 1.2)) * perspective * lerp(1, 0.6, lockPhase);
 
-    const sweep = Math.exp(-Math.pow((screenX / width) * 2 - 1 - sweepPos, 2) * 20) * lockPhase;
-    const cyan = 120 + sweep * 80;
+    const sweep = Math.exp(-Math.pow((screenX / width) * 2 - 1 - sweepPos, 2) * 36) * lockPhase;
+    const cyan = 120 + sweep * 125 + lockPhase * 20;
 
-    ctx.fillStyle = `rgba(${180 + sweep * 40}, ${200 + sweep * 40}, ${cyan}, 0.82)`;
+    ctx.fillStyle = `rgba(${180 + sweep * 60 + lockPhase * 12}, ${200 + sweep * 58 + lockPhase * 14}, ${cyan}, ${0.78 + lockPhase * 0.16})`;
     ctx.fillRect(screenX - size * 0.5, screenY - size * 0.5, size, size);
   }
 
@@ -786,6 +887,119 @@ function setupResizeHandling() {
   );
 }
 
+function buildWordmarkSvgMarkup(pathD, idPrefix) {
+  const steelId = `${idPrefix}-steel`;
+  const cyanId = `${idPrefix}-cyan`;
+  const glowId = `${idPrefix}-glow`;
+
+  return `
+    <defs>
+      <linearGradient id="${steelId}" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#f7fbff" />
+        <stop offset="33%" stop-color="#c0c9d5" />
+        <stop offset="58%" stop-color="#d9e3ef" />
+        <stop offset="100%" stop-color="#8c96a7" />
+      </linearGradient>
+      <linearGradient id="${cyanId}" x1="0%" y1="35%" x2="100%" y2="65%">
+        <stop offset="0%" stop-color="#58c7ff" stop-opacity="0.0" />
+        <stop offset="45%" stop-color="#70d9ff" stop-opacity="0.18" />
+        <stop offset="100%" stop-color="#58c7ff" stop-opacity="0.0" />
+      </linearGradient>
+      <filter id="${glowId}" x="-35%" y="-70%" width="170%" height="240%">
+        <feGaussianBlur stdDeviation="1.7" result="blur" />
+        <feColorMatrix
+          in="blur"
+          type="matrix"
+          values="0 0 0 0 0.26
+                  0 0 0 0 0.66
+                  0 0 0 0 0.89
+                  0 0 0 0.24 0"
+        />
+      </filter>
+    </defs>
+    <g>
+      <path class="wordmark-metal" d="${pathD}" fill="url(#${steelId})" fill-rule="evenodd" />
+      <path d="${pathD}" fill="url(#${cyanId})" fill-rule="evenodd" />
+      <path d="${pathD}" fill="none" stroke="#dbe8f4" stroke-opacity="0.08" stroke-width="0.015" fill-rule="evenodd" />
+      <path d="${pathD}" fill="#5fd4ff" opacity="0.18" filter="url(#${glowId})" fill-rule="evenodd" />
+    </g>
+  `;
+}
+
+function injectWordmarkSvgs() {
+  const svgData = app.wordmarkSvgData ?? createSebastianWordmarkSvg({ tracking: 0.08, padding: 0.09 });
+  const targets = [
+    [elements.posterWordmarkSvg, 'poster-wordmark'],
+    [elements.staticWordmarkSvg, 'static-wordmark'],
+  ];
+
+  for (const [svg, idPrefix] of targets) {
+    if (!svg) {
+      continue;
+    }
+    svg.setAttribute('viewBox', svgData.viewBox);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.innerHTML = buildWordmarkSvgMarkup(svgData.d, idPrefix);
+  }
+}
+
+async function prepareWordmarkData() {
+  try {
+    const traced = await traceWordmarkFromPng('./fontimages/fixedname.png', {
+      alphaThreshold: 18,
+      maxTraceWidth: 760,
+      maxTraceHeight: 300,
+      trimPadding: 2,
+      svgPadding: 2,
+      minComponentArea: 42,
+    });
+
+    const desiredWorldWidth = 10.8;
+    const tracedHeight = clamp(desiredWorldWidth / traced.aspect, 1.18, 2.45);
+
+    app.wordmarkSvgData = traced.svg;
+    app.wordmarkTargetsHigh = traced.createTargets({
+      targetCount: MAX_CUBES,
+      sampleStep: 1,
+      minSpacing: 1.15,
+      height: tracedHeight,
+      depthJitter: 0.045,
+      seed: 73,
+    });
+    app.wordmarkTargetsCanvas = traced.createTargets({
+      targetCount: CANVAS_CUBES,
+      sampleStep: 1.2,
+      minSpacing: 1.35,
+      height: tracedHeight * 0.985,
+      depthJitter: 0.015,
+      seed: 13,
+    });
+    return;
+  } catch (error) {
+    console.warn('PNG wordmark tracing failed; using geometric fallback.', error);
+  }
+
+  app.wordmarkSvgData = createSebastianWordmarkSvg({ tracking: 0.08, padding: 0.09 });
+  app.wordmarkTargetsHigh = createSebastianTargets({
+    targetCount: MAX_CUBES,
+    sampleStep: 0.032,
+    minSpacing: 0.021,
+    tracking: 0.08,
+    height: 1.3,
+    depthJitter: 0.045,
+    seed: 73,
+  });
+  app.wordmarkTargetsCanvas = createSebastianTargets({
+    targetCount: CANVAS_CUBES,
+    sampleStep: 0.039,
+    minSpacing: 0.026,
+    tracking: 0.08,
+    height: 1.28,
+    depthJitter: 0.015,
+    seed: 13,
+  });
+}
+
 async function preloadWordmarkFont() {
   if (!document.fonts || !document.fonts.load) {
     return;
@@ -798,14 +1012,38 @@ async function preloadWordmarkFont() {
   }
 }
 
+async function loadCubeAtlasTexture() {
+  return new Promise((resolve) => {
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      './fontimages/allspark.jpg',
+      (texture) => {
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = true;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        app.atlasTexture = texture;
+        resolve();
+      },
+      undefined,
+      () => resolve()
+    );
+  });
+}
+
 async function init() {
   updateRanges();
+  await prepareWordmarkData();
+  injectWordmarkSvgs();
   setupSkipButton();
   setupPointerInfluence();
   setupVisibilityHandling();
   setupReducedMotionListener();
   setupResizeHandling();
 
+  await loadCubeAtlasTexture();
   await preloadWordmarkFont();
 
   const webglOk = initWebGLRenderer();

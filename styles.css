@@ -97,18 +97,19 @@ body {
 
 .poster-wordmark,
 .static-fallback {
-  text-transform: uppercase;
-  letter-spacing: 0.34em;
-  font-size: clamp(2.2rem, 7vw, 6.4rem);
-  font-weight: 700;
-  background: linear-gradient(180deg, #f4f7fb 0%, #b8c1cd 35%, #d7deea 52%, #8f98a7 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow:
-    0 0 12px rgba(145, 200, 232, 0.16),
-    0 0 22px rgba(95, 177, 217, 0.2),
-    0 2px 0 rgba(37, 43, 55, 0.45);
+  display: grid;
+  place-items: center;
+}
+
+.wordmark-svg {
+  width: min(88vw, 1120px);
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 0 14px rgba(105, 169, 207, 0.18)) drop-shadow(0 0 28px rgba(79, 158, 196, 0.16));
+}
+
+.wordmark-metal {
+  fill-rule: evenodd;
 }
 
 .skip-intro {
@@ -201,10 +202,8 @@ p {
 }
 
 @media (max-width: 900px) {
-  .poster-wordmark,
-  .static-fallback {
-    letter-spacing: 0.22em;
-    font-size: clamp(1.55rem, 11vw, 3rem);
+  .wordmark-svg {
+    width: min(94vw, 560px);
   }
 
   .content {
