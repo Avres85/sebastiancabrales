@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sebastian | Cube Reveal MVP</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <section id="intro" class="intro" aria-label="Opening logo animation">
+      <div class="sticky-shell">
+        <button
+          id="skip-intro"
+          class="skip-intro"
+          aria-label="Skip logo animation and show Sebastian wordmark"
+        >
+          Skip animation
+        </button>
+
+        <div id="poster" class="poster" aria-hidden="true">
+          <div class="poster-noise"></div>
+          <div class="poster-wordmark">SEBASTIAN</div>
+        </div>
+
+        <canvas id="gl-canvas" class="scene-canvas" aria-hidden="true"></canvas>
+        <canvas id="fallback-canvas" class="scene-canvas" aria-hidden="true"></canvas>
+
+        <div id="static-fallback" class="static-fallback" aria-hidden="true">SEBASTIAN</div>
+      </div>
+    </section>
+
+    <main id="content" class="content">
+      <section class="panel">
+        <p class="eyebrow">Portfolio</p>
+        <h1>Sebastian</h1>
+        <p>
+          This prototype keeps the opening cinematic and then releases into normal page flow.
+          Replace this content with the actual site sections.
+        </p>
+      </section>
+      <section class="panel">
+        <h2>Selected Work</h2>
+        <p>
+          Add project cards, case studies, and contact components below once the intro effect is
+          approved.
+        </p>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,184 @@
+Tier B WebGL MVP Rules (Scroll-Driven Sebastian Reveal)
+
+Engineering decisions (resolved)
+1. Rendering stack:
+   - Use vanilla Three.js (WebGL2 preferred, WebGL1 fallback where available).
+   - Use custom ShaderMaterial with instanced attributes.
+   - Reason: strongest balance of visual control, performance, and low integration overhead for a personal site.
+2. Scroll control stack:
+   - Use native CSS `position: sticky` for pinning plus passive `scroll` listener with `requestAnimationFrame` sampling.
+   - No heavy scroll libraries required for MVP.
+3. Post-processing stack:
+   - Use EffectComposer only if bloom is enabled by quality tier.
+   - Default to no post on low tier/mobile.
+
+Product concept
+1. On initial load, metallic cubes float in a dark void.
+2. Cubes move with subtle, slow rotational drift (calm, suspenseful idle state).
+3. User scroll drives convergence from scattered cubes into a final logo text: Sebastian.
+4. The sequence must feel cinematic but remain smooth on a wide range of devices.
+
+Primary interaction model
+1. Map scroll progress to animation progress `p` in `[0..1]`.
+   - Map `p=0..1` across a total scroll span of `160vh` in the intro section.
+   - Apply non-linear mapping: `pEased = smoothstep(0.0, 1.0, pRaw)`.
+2. Keep animation deterministic:
+   - Same `p` value always produces the same cube layout.
+3. Use pinned/hero section behavior so the reveal reads as one intentional sequence.
+   - Keep the section pinned through `p=1`.
+   - Hold the fully assembled logo for `300ms`, then release into normal page flow.
+4. Allow reverse scrubbing:
+   - Scrolling upward smoothly deconstructs the logo back into swarm state.
+5. Pin/unpin implementation details:
+   - Intro container height: `260vh`.
+   - Sticky scene viewport: `100vh` with `top: 0`.
+   - Active scrub window: first `160vh`; hold region: next `20vh` (or 300ms equivalent if programmatic hold is active).
+   - Remaining height transitions into regular page content.
+
+Scroll phase characterization (mapped by progress)
+1. Void Drift (`p = 0.00 to 0.20`)
+   - Cubes are dispersed in depth.
+   - Slow floating and slight rotational drift only.
+   - Very low turbulence.
+2. Signal Build (`p = 0.20 to 0.45`)
+   - Directional bias starts.
+   - Cubes begin flowing toward rough text regions.
+   - Keep curved trajectories, not straight-line lerps.
+3. Convergence (`p = 0.45 to 0.80`)
+   - Attraction increases nonlinearly.
+   - Cubes arc into target points for Sebastian.
+   - Add mild overshoot and correction for mechanical feel.
+4. Lock + Shine (`p = 0.80 to 1.00`)
+   - Cubes settle into crisp final glyph structure.
+   - Brief metallic specular sweep near final lock.
+   - Idle shimmer remains minimal after lock.
+
+Text target definition
+1. Build target points from vector text "Sebastian" once at init.
+2. Sample density target: roughly 500 to 1400 points based on device tier.
+3. Preserve legibility first:
+   - Ensure letter spacing and silhouette read clearly before decorative motion.
+4. Lock typography for consistency:
+   - Wordmark font source must be a bundled local font file, not system fallback.
+   - Wordmark display style must render as ALL CAPS: SEBASTIAN.
+   - Use wide-set geometry with grounded horizontal emphasis.
+5. Sampling method:
+   - Convert font glyph path to evenly distributed points.
+   - Apply minimum point spacing to avoid clumping.
+   - Cache sampled points after first build.
+6. Wordmark construction guidelines (required):
+   - Futuristic sci-fi industrial tone; mechanical, metallic, heavy.
+   - Blocky, angular letterforms with hard sharp corners.
+   - Curves allowed only where structurally necessary.
+   - Uniform stroke thickness with minimal contrast.
+   - Include machined-style bevel cuts and angular inner notches where appropriate.
+   - The A should use a split triangular interior form.
+   - The S should appear angular rather than fully curved.
+
+Core rendering optimizations
+1. Render cubes using instancing (InstancedMesh or raw instanced draws).
+2. Use one shared cube geometry and one material.
+3. Drive most motion in shaders:
+   - Per-instance seed
+   - Base swarm position
+   - Text target position
+   - Global uniforms (`time`, `scrollProgress`, `qualityTier`)
+4. Avoid per-frame CPU updates of all instances.
+5. Preallocate buffers and avoid runtime geometry/material churn.
+
+Quality and performance policy
+1. Cap DPR:
+   - Mobile: 1.25 to 1.5
+   - Desktop: max 2.0
+2. Adaptive quality:
+   - If rolling FPS < 50 for ~500ms, reduce cube count/effects.
+   - Recover quality gradually after sustained stability.
+3. Mobile simplification:
+   - Fewer cubes
+   - Lower bloom intensity
+   - Reduced drift amplitude
+4. Pause/throttle when tab is hidden.
+5. Concrete quality tiers:
+   - Tier High (desktop strong): 1400 cubes, DPR up to 2.0, bloom on (low intensity), full drift amplitude.
+   - Tier Medium (desktop/laptop mixed): 900 cubes, DPR 1.5, bloom optional very low, reduced drift.
+   - Tier Low (mobile/default safe): 550 cubes, DPR 1.25, bloom off, minimal drift/no spec sweep.
+6. Tier switching rules:
+   - Start at Medium by default.
+   - Promote to High only after 2s stable >= 58 FPS.
+   - Demote immediately when < 50 FPS for 500ms.
+   - Cooldown 1.5s before any re-promotion.
+
+Lighting and post constraints
+1. Keep lighting simple:
+   - One directional plus ambient/hemisphere.
+2. Use matcap or lightweight env map to fake brushed metallic response.
+3. Keep post minimal:
+   - Optional low-resolution bloom only.
+   - No SSAO, no DOF, no heavy motion blur.
+
+Accessibility and controls
+1. Respect prefers-reduced-motion:
+   - Disable swarm choreography entirely.
+   - Use two states only: static void state and assembled Sebastian state.
+   - Switch states at roughly 60% of intro scroll range.
+   - Use a short transition only (`180ms` to `220ms`) via opacity/position fade.
+2. Provide a "Skip animation" control:
+   - Jump directly to fully assembled Sebastian state.
+   - Must be keyboard focusable and screen-reader labeled.
+3. Maintain sufficient contrast between logo and background.
+   - Target minimum contrast: 4.5:1 for core readable logo state.
+4. Keyboard and screen-reader behavior:
+   - Skip button in tab order before canvas.
+   - `aria-label`: "Skip logo animation and show Sebastian wordmark".
+   - Preserve focus visibility over dark background.
+
+Fallback strategy
+1. WebGL Tier B primary.
+2. Canvas simplified fallback if WebGL is weak/unavailable.
+3. Static SVG/PNG fallback as final layer.
+4. Keep brand parity across all modes (same wordmark content and composition).
+5. Fallback triggers:
+   - If WebGL context creation fails -> Canvas fallback.
+   - If average FPS stays < 30 during first 1.5s -> static fallback.
+   - If `prefers-reduced-motion` is true -> reduced-motion path first, no swarm.
+
+Initialization and loading policy
+1. Show immediate poster frame (void with faint cube silhouettes) before renderer is ready.
+2. Preload:
+   - Local font for Sebastian wordmark.
+   - Matcap/env texture (compressed, low resolution).
+3. Warm-up:
+   - Compile shaders offscreen before first visible frame when possible.
+4. Reveal policy:
+   - Fade from poster to live canvas over 120ms to avoid pop-in.
+5. Avoid layout shift:
+   - Reserve fixed intro height before assets load.
+
+Brand/style direction
+1. Keep a dark void backdrop with depth cues and restrained atmosphere.
+2. Cubes must read as metallic fragments:
+   - Cool neutral tones
+   - Brushed highlights
+   - High edge contrast
+3. Motion should feel intelligent and fluid, not chaotic noise.
+4. Wordmark finish treatment:
+   - Chrome/steel gradient base.
+   - Brushed metal surface detail.
+   - Subtle inner glow and outer glow for depth.
+   - Subtle cyan/blue highlight accents for high-tech tone.
+
+Acceptance criteria
+1. Functional:
+   - Scroll smoothly controls full sequence from void to Sebastian and back.
+2. Performance:
+   - 55 to 60 FPS desktop target during interaction.
+   - >= 45 FPS on modern mobile.
+3. Readability:
+   - Final Sebastian wordmark is clearly legible at `p >= 0.90`.
+4. Stability:
+   - No layout shift while scrubbing.
+   - No scroll jank from heavy CPU-side updates.
+5. Cross-input consistency:
+   - Wheel, trackpad, and touch produce comparable convergence pacing.
+6. Runtime correctness:
+   - Same scroll position recreates same cube arrangement after resize/orientation change.
