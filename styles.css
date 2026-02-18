@@ -64,6 +64,7 @@ body {
   display: block;
   pointer-events: none;
   opacity: 0;
+  visibility: hidden;
   transition: opacity 120ms linear;
 }
 
@@ -79,6 +80,8 @@ body {
   z-index: 1;
   display: grid;
   place-items: center;
+  opacity: 0;
+  visibility: hidden;
   transition: opacity 120ms linear;
 }
 
@@ -139,24 +142,24 @@ body {
   display: grid;
   place-items: center;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
   transition: opacity 160ms ease;
 }
 
-body.renderer-ready #poster {
-  opacity: 0;
-}
-
 body[data-render-mode="webgl"] #gl-canvas {
   opacity: 1;
+  visibility: visible;
 }
 
 body[data-render-mode="canvas"] #fallback-canvas {
   opacity: 1;
+  visibility: visible;
 }
 
 body[data-render-mode="static"] #static-fallback {
   opacity: 1;
+  visibility: visible;
 }
 
 body[data-render-mode="static"] #poster {
@@ -170,6 +173,13 @@ body[data-render-mode="static"] #poster {
   padding: 10vh 7vw 20vh;
   display: grid;
   gap: 5rem;
+  opacity: 0;
+  visibility: hidden;
+}
+
+body.renderer-ready #content {
+  opacity: 1;
+  visibility: visible;
 }
 
 .panel {

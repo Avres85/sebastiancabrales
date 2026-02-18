@@ -86,7 +86,6 @@ const app = {
   stopLoop: false,
   lastFrameTime: 0,
   firstLiveFrameShown: false,
-  atlasTexture: null,
   // WebGL runtime
   renderer: null,
   scene: null,
@@ -105,6 +104,7 @@ const app = {
   wordmarkSvgData: null,
   wordmarkTargetsHigh: null,
   wordmarkTargetsCanvas: null,
+  staticWordmarkInjected: false,
 };
 
 const VERTEX_SHADER = `
@@ -120,14 +120,10 @@ uniform float uNoise;
 uniform float uSweep;
 uniform float uReduced;
 uniform vec2 uPointer;
-uniform sampler2D uAtlas;
-uniform float uAtlasEnabled;
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying float vLock;
-varying vec3 vLocalPos;
-varying vec3 vLocalNormal;
 
 float sstep(float a, float b, float x) {
   float t = clamp((x - a) / (b - a), 0.0, 1.0);
@@ -205,8 +201,6 @@ void main() {
 
   float convergenceScale = mix(1.0, .325, lockTighten);
   vec3 local = position * (0.15 * aScale * convergenceScale);
-  vLocalPos = position;
-  vLocalNormal = normal;
   vec3 transformed = rot * local + finalPos;
 
   vec4 world = modelMatrix * vec4(transformed, 1.0);
@@ -224,61 +218,10 @@ precision highp float;
 uniform float uTime;
 uniform float uProgress;
 uniform float uSweep;
-uniform sampler2D uAtlas;
-uniform float uAtlasEnabled;
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
 varying float vLock;
-varying vec3 vLocalPos;
-varying vec3 vLocalNormal;
-
-vec2 atlasCellUv(vec2 uv, vec2 cell) {
-  vec2 grid = vec2(3.0, 4.0);
-  float pad = 0.012;
-  uv = clamp(uv, pad, 1.0 - pad);
-  return (cell + uv) / grid;
-}
-
-vec2 cubeAtlasUv(vec3 pos, vec3 nrm) {
-  vec3 an = abs(nrm);
-  vec2 uv;
-  vec2 cell;
-
-  if (an.x >= an.y && an.x >= an.z) {
-    if (nrm.x > 0.0) {
-      // +X face
-      uv = vec2(-pos.z, pos.y) * 0.5 + 0.5;
-      cell = vec2(2.0, 1.0);
-    } else {
-      // -X face
-      uv = vec2(pos.z, pos.y) * 0.5 + 0.5;
-      cell = vec2(0.0, 1.0);
-    }
-  } else if (an.y >= an.x && an.y >= an.z) {
-    if (nrm.y > 0.0) {
-      // +Y face
-      uv = vec2(pos.x, pos.z) * 0.5 + 0.5;
-      cell = vec2(1.0, 0.0);
-    } else {
-      // -Y face
-      uv = vec2(pos.x, -pos.z) * 0.5 + 0.5;
-      cell = vec2(1.0, 2.0);
-    }
-  } else {
-    if (nrm.z > 0.0) {
-      // +Z face
-      uv = vec2(pos.x, pos.y) * 0.5 + 0.5;
-      cell = vec2(1.0, 1.0);
-    } else {
-      // -Z face
-      uv = vec2(-pos.x, pos.y) * 0.5 + 0.5;
-      cell = vec2(1.0, 3.0);
-    }
-  }
-
-  return atlasCellUv(uv, cell);
-}
 
 void main() {
   vec3 n = normalize(vWorldNormal);
@@ -303,15 +246,6 @@ void main() {
   chrome += vec3(brushedMask);
   chrome = mix(chrome, steelCool, fresnel * 0.22);
   chrome = mix(chrome, steel2, specSoft * 0.88 + specHard * 0.6);
-
-  if (uAtlasEnabled > 0.5) {
-    vec2 atlasUv = cubeAtlasUv(vLocalPos, vLocalNormal);
-    vec3 atlas = texture2D(uAtlas, atlasUv).rgb;
-    float atlasLuma = dot(atlas, vec3(0.2126, 0.7152, 0.0722));
-    vec3 etched = mix(vec3(0.74), vec3(1.3), atlasLuma);
-    chrome *= etched;
-    chrome += atlas * 0.06;
-  }
 
   float lock = smoothstep(0.80, 1.0, uProgress);
   float preFlash = smoothstep(0.74, 0.90, uProgress) * (1.0 - smoothstep(0.90, 0.99, uProgress));
@@ -486,8 +420,6 @@ function buildInstancedMesh() {
     uSweep: { value: getTier().sweep },
     uReduced: { value: app.prefersReducedMotion ? 1 : 0 },
     uPointer: { value: new THREE.Vector2(0, 0) },
-    uAtlas: { value: app.atlasTexture },
-    uAtlasEnabled: { value: app.atlasTexture ? 1 : 0 },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -629,6 +561,7 @@ function initCanvasFallback() {
 }
 
 function activateStaticFallback() {
+  injectStaticWordmarkSvg();
   app.rendererType = 'static';
   setRenderMode('static');
   document.body.classList.add('renderer-ready');
@@ -926,21 +859,19 @@ function buildWordmarkSvgMarkup(pathD, idPrefix) {
   `;
 }
 
-function injectWordmarkSvgs() {
-  const svgData = app.wordmarkSvgData ?? createSebastianWordmarkSvg({ tracking: 0.08, padding: 0.09 });
-  const targets = [
-    [elements.posterWordmarkSvg, 'poster-wordmark'],
-    [elements.staticWordmarkSvg, 'static-wordmark'],
-  ];
+function injectStaticWordmarkSvg() {
+  if (app.staticWordmarkInjected) {
+    return;
+  }
 
-  for (const [svg, idPrefix] of targets) {
-    if (!svg) {
-      continue;
-    }
+  const svgData = app.wordmarkSvgData ?? createSebastianWordmarkSvg({ tracking: 0.08, padding: 0.09 });
+  const svg = elements.staticWordmarkSvg;
+  if (svg) {
     svg.setAttribute('viewBox', svgData.viewBox);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-    svg.innerHTML = buildWordmarkSvgMarkup(svgData.d, idPrefix);
+    svg.innerHTML = buildWordmarkSvgMarkup(svgData.d, 'static-wordmark');
   }
+  app.staticWordmarkInjected = true;
 }
 
 async function prepareWordmarkData() {
@@ -1012,38 +943,15 @@ async function preloadWordmarkFont() {
   }
 }
 
-async function loadCubeAtlasTexture() {
-  return new Promise((resolve) => {
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      './fontimages/allspark.jpg',
-      (texture) => {
-        texture.wrapS = THREE.ClampToEdgeWrapping;
-        texture.wrapT = THREE.ClampToEdgeWrapping;
-        texture.minFilter = THREE.LinearMipmapLinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        texture.generateMipmaps = true;
-        texture.colorSpace = THREE.SRGBColorSpace;
-        app.atlasTexture = texture;
-        resolve();
-      },
-      undefined,
-      () => resolve()
-    );
-  });
-}
-
 async function init() {
   updateRanges();
   await prepareWordmarkData();
-  injectWordmarkSvgs();
   setupSkipButton();
   setupPointerInfluence();
   setupVisibilityHandling();
   setupReducedMotionListener();
   setupResizeHandling();
 
-  await loadCubeAtlasTexture();
   await preloadWordmarkFont();
 
   const webglOk = initWebGLRenderer();
