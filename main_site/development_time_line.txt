@@ -1,0 +1,75 @@
+7. Recommended development order
+Do it in this order so you don’t get buried in polish too early:
+Phase 1 — skeleton
+Build all 4 sections with placeholder content first:
+hero container
+3-card GIF row
+basic figure card row
+basic project grid
+Phase 2 — style system
+Set up:
+color variables
+typography
+spacing scale
+reusable section wrapper
+card styles
+button styles
+Phase 3 — interaction
+Then add:
+hero animation integration
+figure carousel motion
+hover states
+section transitions
+Phase 4 — polish
+Then refine:
+responsiveness
+image optimization
+loading behavior
+fade/scroll effects
+accessibility
+This sequence prevents you from spending 4 hours polishing a carousel before the rest of the page exists.
+8. Suggested component architecture
+If you’re using React or Next, I’d structure it roughly like this:
+/components
+  HeroSection
+  GifShowcase
+  FigureCarousel
+  FigureCard
+  ProjectsSection
+  ProjectCard
+/data
+  figures.js
+  projects.js
+/pages or /app
+  homepage
+  reviews/[slug]
+That keeps your content separate from your layout logic, which is exactly what you want for expansion.
+9. What to be careful about
+A few things could hurt the site if not controlled:
+Too many moving elements at once
+You already have:
+hero animation
+GIFs
+looping figure row
+That is a lot of motion.
+So your projects section should be calmer and more grounded.
+Inconsistent styling between sections
+Because your content is diverse, unify everything with:
+one spacing system
+one card treatment family
+one accent palette
+consistent edge rounding and shadows
+Performance
+Animation + GIFs + image carousels can get heavy fast. Prefer:
+optimized MP4/WebM where possible instead of giant GIFs
+compressed images
+lazy loading below the fold
+10. My strongest recommendation
+The smartest implementation strategy is:
+build the site as a cinematic portfolio shell with content-driven reusable modules, and make the figure and project sections data-based from day one.
+That gives you the personality you want without turning the site into something brittle.
+If you want, I can next turn this into a concrete build blueprint with:
+exact section-by-section layout specs
+suggested component names
+a React/Next folder plan
+and a starter data schema for the figures and projects.

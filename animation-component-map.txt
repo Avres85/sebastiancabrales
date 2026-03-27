@@ -1,0 +1,537 @@
+Animation Component Map
+Project: Sebastian cube-reveal landing title prototype
+Purpose: documentation for reusing this animation as a future website landing title
+
+========================================================================
+1. System Summary
+========================================================================
+
+This prototype is a static site with one animation system:
+
+1. The page loads a pinned intro section.
+2. A poster/static layer is shown immediately so there is no blank flash.
+3. JavaScript prepares wordmark geometry from a PNG trace first, with a procedural geometry fallback.
+4. The app tries to run the animation in WebGL using Three.js and instanced cubes.
+5. If WebGL is unavailable, it falls back to a 2D canvas version.
+6. If performance or rendering support is too weak, it falls back again to a static SVG wordmark.
+7. Scroll position drives the full reveal from floating cube swarm to assembled "SEBASTIAN".
+
+Core idea:
+- The animation is not a timeline that plays by itself.
+- Scroll progress is the source of truth.
+- The same scroll position always recreates the same animation state.
+
+========================================================================
+2. File-By-File Map
+========================================================================
+
+index.html
+
+Role:
+- Defines the DOM structure for the intro animation and the placeholder page content below it.
+
+Important elements:
+- `#intro`: full scroll region that contains the animation sequence.
+- `.sticky-shell`: the pinned viewport that stays fixed while the intro scrubs.
+- `#skip-intro`: accessibility and UX control to jump to the assembled wordmark state.
+- `#poster`: immediate pre-render layer shown before the renderer is ready.
+- `#gl-canvas`: primary WebGL surface.
+- `#fallback-canvas`: secondary 2D canvas surface.
+- `#static-fallback`: final non-animated SVG fallback.
+- `#content`: normal page flow revealed after the intro renderer is ready.
+
+Why it matters:
+- This file is the structural shell for the whole system.
+- If you embed the animation into a real homepage hero, this is the file whose structure you will merge into your site layout.
+
+How it connects:
+- Loads `styles.css`.
+- Boots the runtime with `./src/main.js`.
+
+
+styles.css
+
+Role:
+- Controls layout, pinning, layering, visibility, typography, and the look of the static/pseudo-static wordmark states.
+
+Main responsibilities:
+- Declares the local `IndustrialWordmark` font.
+- Sets the dark background and atmosphere.
+- Makes `.sticky-shell` stay pinned with `position: sticky`.
+- Layers the render surfaces with z-index:
+  - poster behind
+  - WebGL canvas above poster
+  - canvas fallback above WebGL
+  - static fallback above both
+  - content above the intro
+- Uses `body[data-render-mode="..."]` to switch visibility between render modes.
+- Reveals `#content` only after the renderer has shown a live frame.
+
+Important implementation detail:
+- The CSS custom properties `--intro-height`, `--active-scroll`, and `--hold-scroll` are set by JS. The CSS and JS are coupled here.
+
+Why it matters for future integration:
+- If you keep the animation but redesign the site, this file will likely be split into:
+  - hero animation layout styles
+  - shared site theme styles
+  - wordmark/fallback styles
+
+
+src/main.js
+
+Role:
+- Main runtime controller.
+- Owns app state, initialization, render mode switching, scroll progress, performance adaptation, input handling, and rendering.
+
+This is the orchestration file. It is the most important file in the project.
+
+Main sections inside this file:
+
+1. Imports
+- Pulls Three.js from a CDN.
+- Pulls procedural wordmark builders from `wordmark.js`.
+- Pulls PNG tracing logic from `wordmark-trace.js`.
+
+2. Constants
+- `MAX_CUBES = 3000`: upper bound for WebGL instance count.
+- `CANVAS_CUBES = 620`: lighter fallback count for canvas mode.
+- `ACTIVE_SCROLL_VH = 160`: distance where the reveal actively scrubs.
+- `HOLD_SCROLL_VH = 20`: extra hold space after the reveal locks.
+- `INTRO_HEIGHT_VH = 260`: total intro scroll section height.
+
+3. Quality tiers
+- `low`, `medium`, `high` define:
+  - cube count
+  - DPR cap
+  - drift intensity
+  - noise intensity
+  - metallic sweep intensity
+- The app starts at `medium`.
+- Runtime can promote or demote based on FPS.
+
+4. Shared app state
+- `app` stores:
+  - current render mode
+  - reduced motion state
+  - scroll progress
+  - quality tier state
+  - pointer influence values
+  - WebGL runtime references
+  - canvas fallback references
+  - prepared wordmark target data
+
+5. Shader code
+- Vertex shader:
+  - starts each cube from `aBase`
+  - pulls it toward `aTarget`
+  - applies drift/noise/swirling
+  - adds overshoot before final lock
+  - compresses the cube scale near final convergence
+  - applies subtle pointer steering before lock
+- Fragment shader:
+  - fakes metallic chrome response
+  - adds brushed-steel style variation
+  - adds cyan fresnel/highlight accents
+  - adds a sweep/light flash near final lock
+
+6. Progress control
+- `computeRawProgress()` reads intro position from `getBoundingClientRect()`.
+- `updateProgress()` converts raw scroll into eased animation progress.
+- Reduced motion path collapses the animation to a two-state transition.
+- A 300ms hold is added when scrolling downward into the final assembled state.
+
+7. WebGL build path
+- `buildInstancedMesh()` creates:
+  - one cube geometry
+  - one instanced geometry
+  - per-instance attributes:
+    - `aBase`
+    - `aTarget`
+    - `aSeed`
+    - `aScale`
+- `initWebGLRenderer()` creates the renderer, scene, camera, mesh, and compiles once before reveal.
+
+8. Canvas fallback path
+- `initCanvasFallback()` prepares smaller base/target arrays and a 2D context.
+- `renderCanvasFallback()` draws 2D rectangles that approximate the same reveal behavior.
+
+9. Static fallback path
+- `activateStaticFallback()` swaps the app into a plain SVG wordmark state.
+- This is the final safety layer if live rendering fails or early FPS is too low.
+
+10. Adaptive performance
+- `updateAdaptiveTier()` demotes when FPS stays below 50 for 500ms.
+- It promotes after stable high FPS and a cooldown.
+- `updateEarlyBench()` can force static fallback if average FPS is under 30 in the first 1.5s.
+
+11. User input and lifecycle
+- Pointer movement subtly affects cube drift before lock.
+- Visibility change pauses work when the tab is hidden.
+- Resize updates scroll ranges and renderer sizes.
+- Reduced-motion media query is observed live.
+- Skip button scrolls the user to the assembled portion of the intro.
+
+12. Wordmark preparation
+- `prepareWordmarkData()` tries to trace `./fontimages/fixedname.png`.
+- If tracing succeeds:
+  - SVG markup comes from the traced contours.
+  - WebGL and canvas targets come from traced mask samples.
+- If tracing fails:
+  - Everything falls back to procedural geometry from `wordmark.js`.
+
+13. Bootstrap
+- `init()` runs setup, preloads the font, chooses the best renderer, and starts the animation loop.
+
+Why this file matters for future reuse:
+- If you only migrate one file with care, migrate this one first.
+- It contains the behavior contract of the whole animation.
+
+
+src/wordmark.js
+
+Role:
+- Procedural wordmark generator.
+- Defines "SEBASTIAN" as geometry rather than depending on a font renderer at runtime.
+
+What it does:
+- Builds each glyph from simple polygons:
+  - rectangles
+  - slanted bars
+  - stroke segments
+- Applies custom kerning
+- Samples interior points from the glyph fill areas
+- Exports those points as 3D target positions for the cube animation
+- Can also generate an SVG path version of the same procedural wordmark
+
+Main functions and concepts:
+
+1. Glyph builders
+- `createGlyphS`, `createGlyphE`, `createGlyphB`, `createGlyphA`, `createGlyphT`, `createGlyphI`, `createGlyphN`
+- These define the mechanical all-caps wordmark style manually.
+
+2. Layout
+- `layoutWordmark()` places letters left to right with tracking and kerning adjustments.
+
+3. Centering
+- `centerGeometry()` recenters the built wordmark around its own midpoint.
+- This is important because the WebGL scene expects the text to assemble around the scene center.
+
+4. Point sampling
+- `sampleGeometryPoints()` walks a grid through the filled shapes and keeps only points that:
+  - fall inside the wordmark
+  - are spaced apart enough to avoid clumping
+
+5. Exports
+- `createSebastianWordmarkSvg()` returns procedural SVG path data.
+- `createSebastianTargets()` returns a `Float32Array` of target positions.
+- `createBaseSwarmPositions()` generates the initial scattered void positions.
+- `createSeeds()` generates deterministic random seeds for per-cube variance.
+- `getWordmarkMetrics()` returns measurements for the procedural wordmark.
+
+Why this file matters:
+- This is the no-dependency geometry backup for the whole system.
+- If the PNG trace asset changes or breaks, this file still gives you a working wordmark target generator.
+
+Best future use:
+- Keep this file as a fallback even if your final hero uses traced or hand-authored logo art.
+
+
+src/wordmark-trace.js
+
+Role:
+- Converts a raster wordmark image into clean vector-like contours and target points.
+
+Why it exists:
+- The animation wants to assemble cubes into your actual branded logo shape, not only the procedural backup geometry.
+- This file lets the runtime derive that target shape from `fontimages/fixedname.png`.
+
+Pipeline inside this file:
+
+1. Image load
+- `loadImage()` loads the source PNG with async decoding.
+
+2. Alpha mask extraction
+- `alphaMaskFromImage()`:
+  - draws the image to an offscreen canvas
+  - reads alpha values
+  - keeps opaque pixels
+  - trims empty space around the logo
+
+3. Cleanup
+- `removeSmallComponents()` removes tiny disconnected noise blobs from the mask.
+
+4. Contour extraction
+- `traceContours()` walks the filled mask and builds polygon loops around edges.
+- Collinear points are simplified out.
+
+5. SVG conversion
+- `contoursToPath()` converts contour loops into an SVG path string and viewBox.
+
+6. Sampling for animation targets
+- `sampleMaskPoints()` samples interior points from the mask.
+- `createTargetFactory()` returns a reusable function that can produce target arrays at different densities.
+
+7. Public entrypoint
+- `traceWordmarkFromPng()` returns:
+  - `svg`
+  - `contours`
+  - `width`
+  - `height`
+  - `aspect`
+  - `createTargets()`
+
+Why this file matters:
+- It is the bridge between logo artwork and the animation system.
+- If you replace the wordmark image in the future, this is the file that lets the rest of the animation keep working with minimal changes.
+
+Important dependency:
+- This file assumes the source artwork is a clean alpha-based PNG.
+- If the source has noisy transparency, anti-aliased debris, or low contrast edges, target quality will degrade.
+
+
+animationmvp.txt
+
+Role:
+- Design and engineering spec for the prototype.
+
+What it contributes:
+- Describes intended animation phases.
+- Defines performance targets, accessibility requirements, fallback rules, and style direction.
+- Explains why the implementation uses sticky scroll + deterministic progress + multiple render tiers.
+
+How to treat it:
+- This is not runtime code.
+- It is the project brief the implementation follows.
+
+
+assets/fonts/IndustrialWordmark.ttf
+
+Role:
+- Local bundled display font used by CSS.
+
+How it is used:
+- Provides typography for the page and skip button.
+- Preloaded in JS through `document.fonts.load()`.
+
+What it does not do:
+- It does not generate the cube target geometry directly.
+- The cube target geometry comes from PNG tracing first, then from `wordmark.js` fallback if needed.
+
+
+fontimages/fixedname.png
+
+Role:
+- Primary source image for traced logo contours and target points.
+
+Why it is important:
+- This is the most direct branded input to the animation.
+- `prepareWordmarkData()` tries this file first.
+
+If you change this asset:
+- The assembled text shape can change without rewriting the animation engine.
+
+
+fontimages/sebastianname.png
+
+Role:
+- Alternate wordmark image asset.
+
+Observed use:
+- Not referenced by the current runtime.
+
+Likely purpose:
+- Earlier or alternate source artwork for the wordmark.
+
+
+fontimages/allspark.jpg
+
+Role:
+- Image asset present in the repo but not used by current runtime.
+
+Likely purpose:
+- Visual reference or earlier experiment asset.
+
+
+.DS_Store files
+
+Role:
+- Finder metadata files from macOS.
+
+Runtime value:
+- None.
+
+========================================================================
+3. Runtime Data Flow
+========================================================================
+
+This is the actual order of operations when the page runs:
+
+1. `index.html` loads the page shell.
+2. `styles.css` sets the layered intro layout and hides render surfaces initially.
+3. `src/main.js` runs `init()`.
+4. `init()` sets scroll range CSS variables and event listeners.
+5. `prepareWordmarkData()` tries to trace `fontimages/fixedname.png`.
+6. If tracing succeeds:
+  - traced SVG data is stored in `app.wordmarkSvgData`
+  - dense 3D target points are generated for WebGL
+  - lighter 3D target points are generated for canvas fallback
+7. If tracing fails:
+  - procedural SVG and target points are generated from `wordmark.js`
+8. The font preload runs.
+9. The app attempts WebGL init.
+10. If WebGL fails, the app attempts canvas fallback.
+11. If canvas fails too, the app switches to static SVG fallback.
+12. The animation loop starts via `requestAnimationFrame(loop)`.
+13. On every frame:
+  - scroll position is converted into progress
+  - progress drives either:
+    - shader uniforms in WebGL
+    - square positions in canvas mode
+    - static assembled state in fallback mode
+14. When the first live frame is visible, `renderer-ready` is added and the lower page content is revealed.
+
+========================================================================
+4. Animation Phase Map
+========================================================================
+
+The visual behavior is split into four phases, controlled mostly in the WebGL vertex shader:
+
+1. Void drift
+- Cubes stay near their base swarm positions.
+- Motion comes from seeded sinusoidal drift and noise.
+
+2. Signal build
+- Cubes begin moving toward the wordmark using directional bias.
+
+3. Convergence
+- Cubes increasingly interpolate from swarm positions toward target points.
+- Overshoot gives the movement a mechanical, not perfectly linear, feel.
+
+4. Lock and shine
+- Cubes collapse tightly into the final wordmark.
+- A metallic sweep and cyan flash emphasize the lock state.
+
+Progress values:
+- `0.00 - 0.20`: drift
+- `0.20 - 0.45`: build
+- `0.45 - 0.80`: convergence
+- `0.80 - 1.00`: lock
+
+========================================================================
+5. Render Modes
+========================================================================
+
+Poster mode
+- Immediate visual placeholder before the renderer is live.
+
+WebGL mode
+- Best version.
+- Uses Three.js, custom shaders, and instanced cube geometry.
+
+Canvas mode
+- Middle fallback.
+- Uses 2D rectangles and simpler interpolation.
+
+Static mode
+- Final fallback.
+- Uses an SVG wordmark with metallic gradients and glow.
+
+Switching mechanism:
+- `document.body.dataset.renderMode`
+- CSS decides which layer becomes visible.
+
+========================================================================
+6. What To Keep When Moving Into The Real Website
+========================================================================
+
+Keep as-is or nearly as-is:
+- `src/main.js`
+- `src/wordmark-trace.js`
+- `src/wordmark.js` as fallback
+- `fontimages/fixedname.png` or its future replacement
+- relevant intro/fallback styles from `styles.css`
+- DOM structure from the intro section in `index.html`
+
+Likely to customize:
+- placeholder content in `#content`
+- page typography outside the animation
+- skip button styling
+- intro height and scroll distances
+- color palette in the fragment shader and CSS
+- wordmark source asset if the final site branding changes
+
+Can be removed or ignored if not needed:
+- `fontimages/sebastianname.png` if it is no longer part of the workflow
+- `fontimages/allspark.jpg` if it is only reference material
+- `.DS_Store` files
+
+========================================================================
+7. Integration Notes For Future Landing Title Use
+========================================================================
+
+If this becomes the main homepage hero later, the cleanest integration strategy is:
+
+1. Keep the intro section as an isolated hero module.
+2. Keep `main.js` focused on animation only, not full-site concerns.
+3. Move site-wide content and navigation outside the animation module.
+4. Keep the traced PNG workflow so logo updates only require asset replacement.
+5. Keep procedural geometry fallback in place for resilience.
+6. Preserve the reduced-motion path and skip button.
+
+Recommended refactor before production integration:
+- Split `src/main.js` into:
+  - renderer setup
+  - scroll/progress controller
+  - fallback management
+  - wordmark preparation
+  - event wiring
+
+Reason:
+- The current single-file runtime is workable for a prototype, but a production homepage will be easier to maintain if orchestration is modularized.
+
+========================================================================
+8. Short Dependency Map
+========================================================================
+
+`index.html`
+-> loads `styles.css`
+-> loads `src/main.js`
+
+`src/main.js`
+-> imports Three.js from unpkg
+-> imports `src/wordmark.js`
+-> imports `src/wordmark-trace.js`
+-> reads `fontimages/fixedname.png`
+-> preloads `assets/fonts/IndustrialWordmark.ttf`
+
+`src/wordmark-trace.js`
+-> depends on a usable PNG alpha mask
+-> returns SVG data + target generator
+
+`src/wordmark.js`
+-> provides procedural SVG + target fallback
+
+========================================================================
+9. Most Important Files
+========================================================================
+
+If you revisit this code months from now, start here in this order:
+
+1. `src/main.js`
+2. `src/wordmark-trace.js`
+3. `src/wordmark.js`
+4. `index.html`
+5. `styles.css`
+6. `animationmvp.txt`
+
+========================================================================
+10. Bottom Line
+========================================================================
+
+This project is a layered landing-title animation system built around deterministic scroll progress and three levels of rendering:
+- WebGL for the full metallic cube reveal
+- Canvas for reduced rendering capability
+- Static SVG for final fallback
+
+The actual logo shape comes from a traced PNG first and a procedural geometry generator second.
+That separation is what makes this prototype reusable: the animation engine and the logo source are already decoupled.

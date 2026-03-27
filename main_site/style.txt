@@ -1,0 +1,284 @@
+This doccument describes the overall style of the website, For the looping collection section I want figures to have a heading that describes them according to this font family: export default function NewtypeFontStackPreview() {
+  const samples = [
+    { label: 'Primary stack', family: 'Eurostile, Microgramma, "Bank Gothic", "Arial Black", sans-serif' },
+    { label: 'System fallback only', family: '"Arial Black", sans-serif' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-neutral-900 text-white p-8 md:p-12">
+      <div className="max-w-5xl mx-auto space-y-8">
+        <div className="space-y-3">
+          <p className="text-sm uppercase tracking-[0.25em] text-neutral-400">Preview</p>
+          <h1 className="text-3xl md:text-5xl font-semibold">Newtype-style substitute stack</h1>
+         <p className="text-neutral-300 max-w-3xl leading-7">
+            This preview shows the intended treatment: bold, italic, uppercase, slightly extended spacing, and a dark motorsport / retro-futurist presentation.
+          </p>
+        </div>
+
+        <div className="grid gap-6">
+          {samples.map((sample, idx) => (
+            <div key={idx} className="rounded-3xl border border-neutral-700 bg-neutral-800/70 shadow-2xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-neutral-700 flex items-center justify-between gap-4">
+                <span className="text-sm text-neutral-300">{sample.label}</span>
+                <code className="text-xs text-neutral-400">{sample.family}</code>
+              </div>
+
+              <div className="p-6 md:p-8 space-y-6">
+                <div
+                  className="uppercase font-black italic tracking-[0.02em] leading-none"
+                  style={{ fontFamily: sample.family }}
+                >
+                  <div className="text-5xl md:text-8xl">NEWTYPE</div>
+                </div>
+
+                <div
+                  className="uppercase font-black italic tracking-[0.03em] leading-none"
+                  style={{ fontFamily: sample.family }}
+                >
+                  <div className="text-3xl md:text-5xl">SEBASTIAN</div>
+                </div>
+
+                <div
+                  className="uppercase font-extrabold italic tracking-[0.06em] text-neutral-300"
+                  style={{ fontFamily: sample.family }}
+                >
+                  <div className="text-lg md:text-2xl">Retro Futurist Interface</div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <div className="h-3 w-16 bg-yellow-400 rounded-sm" />
+                  <div className="h-3 w-16 bg-red-600 rounded-sm" />
+                  <div className="h-3 w-16 bg-blue-600 rounded-sm" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+note how theres's a small section that has 3 colors, I want those 3 colors to reflect the 3 main colors of the figure, they will be provided later. 
+
+
+
+
+        <div className="rounded-3xl border border-neutral-700 bg-neutral-800/70 p-6 md:p-8">
+          <p className="text-sm uppercase tracking-[0.2em] text-neutral-400 mb-4">CSS treatment</p>
+          <pre className="whitespace-pre-wrap text-sm text-neutral-200 leading-7 overflow-x-auto">
+{`.newtype-title {
+  font-family: "Eurostile", "Microgramma", "Bank Gothic", "Arial Black", sans-serif;
+  font-style: italic;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}`}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+As for the overall style of the website: 
+
+
+industrial sci-fi + heroic machinery + neon energy restrained by darkness
+It is not colorful in a playful way. It is mostly dark, metallic, and atmospheric, with color used as controlled ignition points. The palette works because most of the frame is subdued, and then a few colors punch through:
+deep black-blue space tones
+gunmetal / steel neutrals
+embers and molten orange
+warning red
+electric cyan / cold blue glow
+small traces of violet-magenta light
+So the feeling is not “bright futuristic.”
+It is more:
+cinematic, mechanical, high-contrast, battle-worn, sleek, luminous in selective places
+That makes it a very strong fit for a site that starts in a dark hero and then resolves into a cleaner white layout.
+What the palette is actually doing
+Across the images, the colors fall into 4 functional groups:
+1. Base world colors
+These build the environment.
+Void black — almost true black, but slightly blue/purple
+Midnight navy
+charcoal gunmetal
+smoky steel gray
+These should dominate the hero section.
+Approximate usable web values:
+#06070B
+#0C1119
+#131A24
+#1E2630
+#2F3742
+These give you that “space hangar / mech bay / deep metallic” feel.
+2. Heat colors
+These give the images their aggression and drama.
+burnt orange
+molten amber
+rusted copper
+deep ember red-orange
+Approximate usable web values:
+#C96A1B
+#E38A2C
+#A84A16
+#6E2312
+These should be your strongest accent family if you want the site to feel powerful and cinematic.
+Use them for:
+CTA hover states
+key icons
+selected tabs
+small section dividers
+glows behind buttons
+underline accents
+3. Signal colors
+These are the “energy core” colors.
+electric cyan
+cold blue-white
+ice blue
+small violet/lavender glow
+Approximate usable web values:
+#79D9FF
+#5FB7FF
+#B7F1FF
+#8D78FF
+These should be used more sparingly than the warm tones.
+They feel like optics, LEDs, interface light, reflections on metal.
+Use them for:
+link hover glow
+subtle gradients in cards
+input focus rings
+micro-animations
+thin borders on dark sections
+icon highlights
+4. Armor colors
+These are important because the bright colors only work against them.
+desaturated steel
+cold silver
+battle-worn gray
+muted slate blue-gray
+Approximate usable web values:
+#707A86
+#8D97A3
+#A6AFB8
+#5B6675
+These are excellent for typography and structure inside the dark hero.
+Best synthesis for your site
+Since you want:
+a dark space hero section that fades to white, cleaner, sleek
+the strongest approach is this:
+Hero section
+Make it feel like a cinematic command deck / space hangar.
+Use:
+background: deep navy-black gradient
+subtle steel-blue haze
+very faint orange and cyan bloom in opposite areas
+metallic typography or crisp white type with restrained glow
+accents: orange first, cyan second
+A strong hero background direction would be something like:
+top: #05070B
+middle: #0C1520
+lower transition: #1B2430
+then fade into #F7F9FC or #FFFFFF
+So the page feels like it is emerging from darkness into clarity.
+The key design principle: don’t overuse the bright colors
+The images work because the vivid tones are localized.
+For your site, that means:
+70–80% should be neutrals
+10–15% should be cool steel / blue-grays
+5–10% should be warm orange/red accents
+2–5% should be electric cyan/violet highlights
+If you make everything saturated, you lose the cinematic/mechanical tension.
+Recommended site palette
+Here’s a practical palette you can actually build from.
+Primary darks
+Void Black — #06070B
+Midnight Metal — #0D121A
+Deep Space Navy — #111B27
+Gunmetal — #222B35
+Structural neutrals
+Steel Slate — #4F5C6B
+Titanium Gray — #7B8694
+Soft Alloy — #B5BDC8
+Warm accents
+Molten Orange — #D97A24
+Forge Amber — #F0A13A
+Burnt Copper — #A94F1D
+Warning Red — #8F1F1A
+Cool accents
+Energon Blue — #67C7FF
+Cold Cyan — #9BE7FF
+Ice Glow — #D9F7FF
+Plasma Violet — #8E79FF
+Light-mode transition colors
+Mist White — #F7F9FC
+Clean Panel White — #FFFFFF
+Cool Surface Gray — #EEF2F6
+How this should feel in different sections
+Dark hero
+background: black/navy gradient
+headline: white or slightly steel-tinted white
+CTA primary: molten orange
+CTA secondary: transparent or steel outline with cyan hover
+ambient glows: very soft cyan and ember
+Transition section
+This is where the site should start “cooling down.”
+Bring in:
+smoky blue-grays
+very soft warm separators
+less glow, more precision
+White / clean sections
+This is where many people lose the vibe.
+Do not abandon the sci-fi identity entirely.
+Keep it alive through:
+thin slate borders
+orange micro-accents
+blue focus states
+metallic icon treatment
+subtle gradient overlays in cards
+Think:
+clean editorial tech site with hidden mech-energy underneath
+not:
+“dark game landing page pasted onto a SaaS site”
+Material / texture direction
+The images also suggest texture, not just color.
+You want surfaces that feel like:
+brushed metal
+illuminated panels
+polished armor edges
+slight battle wear
+fog, bloom, atmospheric depth
+On a website, that translates to:
+soft radial glows
+slight gradient noise
+subtle bevel-like edge lighting
+panel divisions
+restrained shadows with cool undertones
+Avoid:
+flat candy gradients
+playful neon
+overly glassmorphic pastel UI
+bright primary reds/blues with no depth
+Typography vibe
+Even if your layout becomes clean and white later, the palette suggests typography that feels:
+bold
+engineered
+geometric
+slightly condensed
+sharp-edged rather than rounded
+For headings, think:
+industrial grotesk
+square/geometric sans
+slightly extended or condensed techno forms
+Body text should stay highly readable and modern, but your display type can carry the “mech / sci-fi” flavor.
+Best overall summary for your design direction
+Your site should feel like:
+a polished futuristic interface emerging out of a war-torn cinematic sci-fi world
+More specifically:
+the top of the page is dark, atmospheric, metallic, and high-drama
+the lower sections become bright, disciplined, and premium
+color is not decorative; it behaves like energy, heat, and signal
+orange gives power and heat
+cyan gives technology and precision
+steel and navy hold the entire system together: 
+
+
+
+
+ 
