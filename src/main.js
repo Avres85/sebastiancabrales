@@ -330,6 +330,11 @@ function updateRanges() {
   document.body.style.setProperty('--hold-scroll', `${HOLD_SCROLL_VH}vh`);
 }
 
+function updateIntroLightProgress() {
+  const fadeProgress = smoothstep(0.8, 1, app.progress);
+  document.documentElement.style.setProperty('--intro-light-progress', fadeProgress.toFixed(4));
+}
+
 function setupSkipButton() {
   elements.skipButton.addEventListener('click', () => {
     const introTop = window.scrollY + elements.intro.getBoundingClientRect().top;
@@ -371,10 +376,12 @@ function updateProgress(nowMs) {
     const eased = smoothstep(0, 1, t);
     app.reducedProgress = lerp(app.reducedFrom, app.reducedTarget, eased);
     app.progress = app.reducedProgress;
+    updateIntroLightProgress();
     return;
   }
 
   app.progress = smoothstep(0, 1, heldRaw);
+  updateIntroLightProgress();
 }
 
 function buildInstancedMesh() {
