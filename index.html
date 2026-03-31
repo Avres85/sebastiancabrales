@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sebastian | Cube Reveal MVP</title>
+    <title>Sebastian | Portfolio</title>
     <style>
       body {
         background: #020306;
@@ -58,14 +58,12 @@
     </section>
 
     <main id="content" class="content">
-      <section class="panel">
-        <p class="eyebrow">Portfolio</p>
-        <h1>Sebastian</h1>
-        <p class="identity-line">CS + Applied Math at UC Berkeley</p>
-      </section>
-
-      <section class="media-section" aria-label="Favorite movie scenes">
-        <p class="eyebrow">Favorite Movie Scenes</p>
+      <section class="section-block media-section" aria-label="Favorite movie scenes">
+        <div class="section-header">
+          <p class="section-index">01</p>
+          <p class="section-label">Scenes</p>
+          <div class="section-rule"></div>
+        </div>
         <div class="media-grid">
           <figure class="media-card">
             <img
@@ -94,14 +92,76 @@
         </div>
       </section>
 
-      <section class="panel projects-panel" aria-label="Projects">
-        <p class="tech-title">Under Construction</p>
+      <section class="section-block collection-section" aria-label="Figure collection">
+        <div class="section-header">
+          <p class="section-index">02</p>
+          <p class="section-label">Collection</p>
+          <div class="section-rule"></div>
+        </div>
+        <div class="carousel-shell">
+          <div class="carousel-track">
+            <a class="figure-item" href="./reviews/figure-1.html" style="--swatch-a:#243C93;--swatch-b:#BA0B08;--swatch-c:#3A3D42;">
+              <img src="./main_page_graphics/carousel_images/SCREAM PRIME.png" alt="SCREAM PRIME review" loading="eager" decoding="async" />
+              <span class="figure-title">SCREAM PRIME</span>
+              <span class="figure-palette"></span>
+            </a>
+            <a class="figure-item" href="./reviews/figure-2.html" style="--swatch-a:#373A3D;--swatch-b:#D0D5D5;--swatch-c:#934351;">
+              <img src="./main_page_graphics/carousel_images/3Z PREMIUM BB NEMESIS .png" alt="3Z PREMIUM BB NEMESIS review" loading="eager" decoding="async" />
+              <span class="figure-title">3Z PREMIUM BB NEMESIS</span>
+              <span class="figure-palette"></span>
+            </a>
+            <a class="figure-item" href="./reviews/figure-3.html" style="--swatch-a:#AB3B2D;--swatch-b:#383737;--swatch-c:#B49A3A;">
+              <img src="./main_page_graphics/carousel_images/SAZABI.png" alt="SAZABI review" loading="eager" decoding="async" />
+              <span class="figure-title">SAZABI</span>
+              <span class="figure-palette"></span>
+            </a>
+            <a class="figure-item" href="./reviews/figure-4.html" style="--swatch-a:#2B3F99;--swatch-b:#CFD0D4;--swatch-c:#B31F16;">
+              <img src="./main_page_graphics/carousel_images/TFV NEMESIS.png" alt="TFV NEMESIS review" loading="eager" decoding="async" />
+              <span class="figure-title">TFV NEMESIS</span>
+              <span class="figure-palette"></span>
+            </a>
+            <a class="figure-item" href="./reviews/figure-5.html" style="--swatch-a:#8A2724;--swatch-b:#2F3C83;--swatch-c:#3A3E46;">
+              <img src="./main_page_graphics/carousel_images/3Z PREMIUM BB OPTIMUS.png" alt="3Z PREMIUM BB OPTIMUS review" loading="eager" decoding="async" />
+              <span class="figure-title">3Z PREMIUM BB OPTIMUS</span>
+              <span class="figure-palette"></span>
+            </a>
+            <a class="figure-item" href="./reviews/figure-6.html" style="--swatch-a:#E5E5E8;--swatch-b:#303136;--swatch-c:#C9AC58;">
+              <img src="./main_page_graphics/carousel_images/RX-73 Nu Gundam .png" alt="RX-73 Nu Gundam review" loading="eager" decoding="async" />
+              <span class="figure-title">RX-73 Nu Gundam</span>
+              <span class="figure-palette"></span>
+            </a>
+            <a class="figure-item" href="./reviews/figure-7.html" style="--swatch-a:#EAEBEB;--swatch-b:#992333;--swatch-c:#5270A7;">
+              <img src="./main_page_graphics/carousel_images/RX-78-2 RG.png" alt="RX-78-2 RG review" loading="eager" decoding="async" />
+              <span class="figure-title">RX-78-2 RG</span>
+              <span class="figure-palette"></span>
+            </a>
+          </div>
+        </div>
       </section>
 
-      <section class="panel resume-panel">
-        <a class="resume-link" href="./Sebastian%20--%20Curr%20Res-15.pdf" download>
-          My Resume
-        </a>
+      <section class="section-block projects-section" aria-label="Technical projects">
+        <div class="section-header">
+          <p class="section-index">03</p>
+          <p class="section-label">Projects</p>
+          <div class="section-rule"></div>
+        </div>
+        <div class="projects-grid">
+          <article class="project-card">
+            <p class="project-tag">Module</p>
+            <h2 class="project-title">Project Slot A</h2>
+            <p class="project-copy">Drop in your first technical case study here with stack, constraints, and impact.</p>
+          </article>
+          <article class="project-card">
+            <p class="project-tag">Module</p>
+            <h2 class="project-title">Project Slot B</h2>
+            <p class="project-copy">Built to scale as a repeatable card system so new work can be added quickly.</p>
+          </article>
+          <article class="project-card">
+            <p class="project-tag">Module</p>
+            <h2 class="project-title">Project Slot C</h2>
+            <p class="project-copy">Reserved for upcoming build notes, visuals, and links to source or demos.</p>
+          </article>
+        </div>
       </section>
     </main>
 

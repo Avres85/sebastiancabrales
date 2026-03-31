@@ -339,13 +339,21 @@ function contoursToPath(contours, width, height, padding) {
   };
 }
 
-function sampleMaskPoints(mask, width, height, options = {}) {
-  const sampleStep = Math.max(1, options.sampleStep ?? 1);
-  const minSpacing = Math.max(1, options.minSpacing ?? 1.18);
+function shuffleInPlace(values, rng) {
+  for (let i = values.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = values[i];
+    values[i] = values[j];
+    values[j] = tmp;
+  }
+}
+
+function sampleCandidatesWithSpacing(candidates, minSpacing, maxCount = Infinity) {
   const minSpacingSq = minSpacing * minSpacing;
   const bucketSize = minSpacing;
   const buckets = new Map();
-  const points = [];
+  const out = [];
+  const limit = Number.isFinite(maxCount) ? maxCount : Number.MAX_SAFE_INTEGER;
 
   function bucketKey(ix, iy) {
     return `${ix}|${iy}`;
@@ -361,7 +369,6 @@ function sampleMaskPoints(mask, width, height, options = {}) {
         if (!bucket) {
           continue;
         }
-
         for (const point of bucket) {
           const dx = point.x - x;
           const dy = point.y - y;
@@ -375,19 +382,32 @@ function sampleMaskPoints(mask, width, height, options = {}) {
     return true;
   }
 
-  function pushPoint(x, y) {
+  function addPoint(x, y) {
     const ix = Math.floor(x / bucketSize);
     const iy = Math.floor(y / bucketSize);
-    const k = bucketKey(ix, iy);
-    const bucket = buckets.get(k) ?? [];
-    bucket.push({ x, y });
-    buckets.set(k, bucket);
-
-    const nx = (x + 0.5 - width * 0.5) / height;
-    const ny = (height * 0.5 - (y + 0.5)) / height;
-    points.push({ x: nx, y: ny });
+    const mapKey = bucketKey(ix, iy);
+    const bucket = buckets.get(mapKey) ?? [];
+    const point = { x, y };
+    bucket.push(point);
+    buckets.set(mapKey, bucket);
+    out.push(point);
   }
 
+  for (const candidate of candidates) {
+    if (out.length >= limit) {
+      break;
+    }
+    if (!canPlace(candidate.x, candidate.y)) {
+      continue;
+    }
+    addPoint(candidate.x, candidate.y);
+  }
+
+  return out;
+}
+
+function buildFilledCandidates(mask, width, height, sampleStep) {
+  const out = [];
   for (let y = 0; y < height; y += sampleStep) {
     for (let x = 0; x < width; x += sampleStep) {
       const roundedX = Math.floor(x);
@@ -395,20 +415,128 @@ function sampleMaskPoints(mask, width, height, options = {}) {
       if (mask[roundedY * width + roundedX] !== 1) {
         continue;
       }
-      if (!canPlace(roundedX, roundedY)) {
+      out.push({ x: roundedX, y: roundedY });
+    }
+  }
+  return out;
+}
+
+function buildContourCandidates(mask, width, height, sampleStep) {
+  const out = [];
+  for (let y = 0; y < height; y += sampleStep) {
+    for (let x = 0; x < width; x += sampleStep) {
+      const roundedX = Math.floor(x);
+      const roundedY = Math.floor(y);
+      if (mask[roundedY * width + roundedX] !== 1) {
         continue;
       }
-      pushPoint(roundedX, roundedY);
+
+      const left = roundedX > 0 ? mask[roundedY * width + (roundedX - 1)] : 0;
+      const right = roundedX < width - 1 ? mask[roundedY * width + (roundedX + 1)] : 0;
+      const up = roundedY > 0 ? mask[(roundedY - 1) * width + roundedX] : 0;
+      const down = roundedY < height - 1 ? mask[(roundedY + 1) * width + roundedX] : 0;
+      if (left === 1 && right === 1 && up === 1 && down === 1) {
+        continue;
+      }
+
+      out.push({ x: roundedX, y: roundedY });
+    }
+  }
+  return out;
+}
+
+function sampleMaskPoints(mask, width, height, options = {}) {
+  const sampleStep = Math.max(1, options.sampleStep ?? 1);
+  const minSpacing = Math.max(1, options.minSpacing ?? 1.18);
+  const seed = options.seed ?? 7;
+  const maxCount = options.maxCount ?? Infinity;
+  const candidates = buildFilledCandidates(mask, width, height, sampleStep);
+  const rng = createRng(seed);
+  shuffleInPlace(candidates, rng);
+  return sampleCandidatesWithSpacing(candidates, minSpacing, maxCount);
+}
+
+function sampleContourPoints(mask, width, height, options = {}) {
+  const sampleStep = Math.max(1, options.sampleStep ?? 1);
+  const minSpacing = Math.max(1, options.minSpacing ?? 1.1);
+  const seed = options.seed ?? 17;
+  const maxCount = options.maxCount ?? Infinity;
+  const candidates = buildContourCandidates(mask, width, height, sampleStep);
+  const rng = createRng(seed);
+  shuffleInPlace(candidates, rng);
+  return sampleCandidatesWithSpacing(candidates, minSpacing, maxCount);
+}
+
+function sampleBaselineAnchors(mask, width, height, options = {}) {
+  const bins = Math.max(24, Math.floor(options.bins ?? Math.round(width / 8)));
+  const minSpacing = Math.max(1, options.minSpacing ?? 1.0);
+  const seed = options.seed ?? 31;
+  const maxCount = options.maxCount ?? Infinity;
+  const candidates = [];
+
+  for (let i = 0; i < bins; i += 1) {
+    const x0 = Math.floor((i / bins) * width);
+    const x1 = Math.max(x0, Math.min(width - 1, Math.floor(((i + 1) / bins) * width) - 1));
+    let best = null;
+
+    for (let y = height - 1; y >= 0 && !best; y -= 1) {
+      for (let x = x0; x <= x1; x += 1) {
+        if (mask[y * width + x] === 1) {
+          best = { x, y };
+          break;
+        }
+      }
+    }
+
+    if (best) {
+      candidates.push(best);
     }
   }
 
-  return points;
+  const rng = createRng(seed);
+  shuffleInPlace(candidates, rng);
+  return sampleCandidatesWithSpacing(candidates, minSpacing, maxCount);
+}
+
+function normalizePoint(point, width, height) {
+  return {
+    x: (point.x + 0.5 - width * 0.5) / height,
+    y: (height * 0.5 - (point.y + 0.5)) / height,
+  };
+}
+
+function takeFromPool(pool, type, count, selected, used) {
+  if (count <= 0 || !pool.length) {
+    return;
+  }
+
+  for (let i = 0; i < pool.length && count > 0; i += 1) {
+    const point = pool[i];
+    const k = key(point.x, point.y);
+    if (used.has(k)) {
+      continue;
+    }
+    used.add(k);
+    selected.push({ point, type });
+    count -= 1;
+  }
 }
 
 function createTargetFactory(traceData) {
-  const densePoints = sampleMaskPoints(traceData.mask, traceData.width, traceData.height, {
+  const denseInteriorPoints = sampleMaskPoints(traceData.mask, traceData.width, traceData.height, {
     sampleStep: 1,
     minSpacing: 1.0,
+    seed: 101,
+  });
+  const denseContourPoints = sampleContourPoints(traceData.mask, traceData.width, traceData.height, {
+    sampleStep: 1,
+    minSpacing: 1.0,
+    seed: 211,
+  });
+  const denseBaselinePoints = sampleBaselineAnchors(traceData.mask, traceData.width, traceData.height, {
+    minSpacing: 1.0,
+    bins: Math.max(64, Math.round(traceData.width / 8)),
+    seed: 307,
   });
 
   return function createTargets(options = {}) {
@@ -419,40 +547,80 @@ function createTargetFactory(traceData) {
       seed = 7,
       sampleStep = 1,
       minSpacing = 1.16,
+      baselineRatio = 0.2,
+      contourRatio = 0.25,
     } = options;
 
-    const sampledPoints = sampleStep === 1 && Math.abs(minSpacing - 1.0) < 0.01
-      ? densePoints
-      : sampleMaskPoints(traceData.mask, traceData.width, traceData.height, {
-          sampleStep,
-          minSpacing,
-        });
+    const interiorPool = sampleMaskPoints(traceData.mask, traceData.width, traceData.height, {
+      sampleStep,
+      minSpacing,
+      seed: seed + 11,
+    });
+    const contourPool = sampleContourPoints(traceData.mask, traceData.width, traceData.height, {
+      sampleStep,
+      minSpacing: Math.max(1, minSpacing * 0.95),
+      seed: seed + 23,
+    });
+    const baselinePool = sampleBaselineAnchors(traceData.mask, traceData.width, traceData.height, {
+      minSpacing: Math.max(1, minSpacing * 0.9),
+      bins: Math.max(64, Math.round(traceData.width / (sampleStep * 8))),
+      seed: seed + 37,
+    });
 
-    const source = sampledPoints.length ? sampledPoints : densePoints;
+    const interiorSource = interiorPool.length ? interiorPool : denseInteriorPoints;
+    const contourSource = contourPool.length ? contourPool : denseContourPoints;
+    const baselineSource = baselinePool.length ? baselinePool : denseBaselinePoints;
 
-    if (!source.length) {
+    const anyPoints = interiorSource.length || contourSource.length || baselineSource.length;
+    if (!anyPoints) {
       return new Float32Array(targetCount * 3);
+    }
+
+    const selected = [];
+    const used = new Set();
+    const baselineTarget = Math.min(
+      baselineSource.length,
+      Math.max(1, Math.round(targetCount * baselineRatio))
+    );
+    const contourTarget = Math.min(
+      contourSource.length,
+      Math.max(0, Math.round(targetCount * contourRatio))
+    );
+
+    takeFromPool(baselineSource, 'baseline', baselineTarget, selected, used);
+    takeFromPool(contourSource, 'contour', contourTarget, selected, used);
+    takeFromPool(interiorSource, 'interior', targetCount - selected.length, selected, used);
+    takeFromPool(contourSource, 'contour', targetCount - selected.length, selected, used);
+    takeFromPool(baselineSource, 'baseline', targetCount - selected.length, selected, used);
+
+    if (!selected.length) {
+      return new Float32Array(targetCount * 3);
+    }
+
+    const refillPool = selected.slice();
+    for (let i = 0; selected.length < targetCount; i += 1) {
+      selected.push(refillPool[i % refillPool.length]);
     }
 
     const rng = createRng(seed);
     const out = new Float32Array(targetCount * 3);
 
-    if (source.length >= targetCount) {
-      const stride = source.length / targetCount;
-      for (let i = 0; i < targetCount; i += 1) {
-        const idx = Math.floor(i * stride);
-        const point = source[idx];
-        out[i * 3] = (point.x + (rng() - 0.5) * 0.0022) * height;
-        out[i * 3 + 1] = (point.y + (rng() - 0.5) * 0.0022) * height;
-        out[i * 3 + 2] = (rng() - 0.5) * depthJitter;
-      }
-      return out;
-    }
-
     for (let i = 0; i < targetCount; i += 1) {
-      const point = source[i % source.length];
-      out[i * 3] = (point.x + (rng() - 0.5) * 0.0022) * height;
-      out[i * 3 + 1] = (point.y + (rng() - 0.5) * 0.0022) * height;
+      const entry = selected[i];
+      const normalized = normalizePoint(entry.point, traceData.width, traceData.height);
+
+      let jitterX = 0.0020;
+      let jitterY = 0.0020;
+      if (entry.type === 'baseline') {
+        jitterX = 0.0006;
+        jitterY = 0.0;
+      } else if (entry.type === 'contour') {
+        jitterX = 0.0009;
+        jitterY = 0.0005;
+      }
+
+      out[i * 3] = (normalized.x + (rng() - 0.5) * jitterX) * height;
+      out[i * 3 + 1] = (normalized.y + (rng() - 0.5) * jitterY) * height;
       out[i * 3 + 2] = (rng() - 0.5) * depthJitter;
     }
 

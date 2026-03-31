@@ -13,23 +13,28 @@ const CANVAS_CUBES = 620;
 const ACTIVE_SCROLL_VH = 160;
 const HOLD_SCROLL_VH = 20;
 const INTRO_HEIGHT_VH = 260;
+const LOCK_COUNT_FREEZE_PROGRESS = 0.72;
+const CONTENT_REVEAL_RAW_PROGRESS = 0.999;
+const DEBUG_TARGETS = false;
+const CAROUSEL_PIXELS_PER_SECOND = 12.5;
+const MIN_CAROUSEL_DURATION_SECONDS = 18;
 
 const QUALITY_TIERS = {
   low: {
     name: 'low',
-    count: 1200,
-    dpr: 1.25,
-    drift: 0.34,
-    noise: 0.16,
-    sweep: 0.0,
+    count: 3000,
+    dpr: 2.0,
+    drift: 0.72,
+    noise: 0.3,
+    sweep: 1.0,
   },
   medium: {
     name: 'medium',
-    count: 2250,
-    dpr: 1.5,
-    drift: 0.54,
-    noise: 0.22,
-    sweep: 0.7,
+    count: 3000,
+    dpr: 2.0,
+    drift: 0.72,
+    noise: 0.3,
+    sweep: 1.0,
   },
   high: {
     name: 'high',
@@ -68,9 +73,12 @@ const app = {
   holdRangePx: window.innerHeight * (HOLD_SCROLL_VH / 100),
   progress: 0,
   rawProgress: 0,
+  actualRawProgress: 0,
   lastRawProgress: 0,
   lockHoldUntil: 0,
-  tierName: 'medium',
+  tierName: 'high',
+  activeTierCountName: null,
+  pendingTierCountName: null,
   fpsLowStart: 0,
   fpsHighStart: 0,
   tierCooldownUntil: 0,
@@ -85,7 +93,14 @@ const app = {
   paused: false,
   stopLoop: false,
   lastFrameTime: 0,
-  firstLiveFrameShown: false,
+  carouselTrack: null,
+  carouselResizeRafId: 0,
+  carouselReady: false,
+  carouselBuildInProgress: false,
+  carouselRebuildQueued: false,
+  carouselBuildSeq: 0,
+  carouselLastGoodLoopWidth: 0,
+  carouselLastGoodDurationSeconds: 0,
   // WebGL runtime
   renderer: null,
   scene: null,
@@ -93,6 +108,7 @@ const app = {
   mesh: null,
   material: null,
   uniforms: null,
+  tierAttributeSets: null,
   // Canvas fallback runtime
   canvasCtx: null,
   canvasWidth: 0,
@@ -161,6 +177,7 @@ void main() {
   float build = sstep(0.20, 0.45, p);
   float converge = sstep(0.45, 0.80, p);
   float lock = sstep(0.80, 1.00, p);
+  float lockEarly = sstep(0.62, 0.90, p);
   float lockTighten = sstep(0.72, 1.00, p);
   float reduced = step(0.5, uReduced);
 
@@ -186,15 +203,18 @@ void main() {
   vec3 guided = aBase + drift + swirl + directionalBias * (build * 1.95);
 
   vec3 dir = normalize(aTarget - aBase + vec3(0.0001));
-  float wobble = sin((uTime * 3.1 + aSeed) * 0.72) * (1.0 - lock);
-  vec3 overshoot = dir * wobble * (0.42 + rand.z * 0.22);
+  float overshootFade = 1.0 - lockEarly;
+  float wobble = sin((uTime * 3.1 + aSeed) * 0.72) * overshootFade;
+  vec3 overshoot = dir * wobble * (0.18 + rand.z * 0.1);
 
   vec3 assembled = aTarget + overshoot;
   vec3 finalPos = mix(guided, assembled, converge);
+  finalPos = mix(finalPos, aTarget, lockEarly);
   finalPos = mix(finalPos, aTarget, lock);
 
-  finalPos.x += uPointer.x * (1.0 - lock) * 0.85;
-  finalPos.y += uPointer.y * (1.0 - lock) * 0.42;
+  float pointerFade = 1.0 - lockEarly;
+  finalPos.x += uPointer.x * pointerFade * 0.22;
+  finalPos.y += uPointer.y * pointerFade * 0.12;
 
   float spin = (uTime * 0.23 + aSeed * 0.014) * (1.0 - lock * 0.82) * (1.0 - reduced);
   mat3 rot = rotY(spin) * rotX(spin * 0.58 + rand.x) * rotZ(spin * 0.39 + rand.y);
@@ -277,6 +297,71 @@ function smoothstep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
+function createDistributedIndices(totalCount, pickCount) {
+  if (pickCount >= totalCount) {
+    const indices = new Uint32Array(totalCount);
+    for (let i = 0; i < totalCount; i += 1) {
+      indices[i] = i;
+    }
+    return indices;
+  }
+
+  const indices = new Uint32Array(pickCount);
+  const stride = totalCount / pickCount;
+
+  for (let i = 0; i < pickCount; i += 1) {
+    indices[i] = Math.floor(i * stride);
+  }
+
+  return indices;
+}
+
+function subsetFloat32Vector3(source, indices) {
+  const out = new Float32Array(indices.length * 3);
+  for (let i = 0; i < indices.length; i += 1) {
+    const src = indices[i] * 3;
+    const dst = i * 3;
+    out[dst] = source[src];
+    out[dst + 1] = source[src + 1];
+    out[dst + 2] = source[src + 2];
+  }
+  return out;
+}
+
+function subsetFloat32Scalar(source, indices) {
+  const out = new Float32Array(indices.length);
+  for (let i = 0; i < indices.length; i += 1) {
+    out[i] = source[indices[i]];
+  }
+  return out;
+}
+
+function createTierAttributeSets(basePositions, targetPositions, seeds, scales) {
+  const sets = {};
+  const names = Object.keys(QUALITY_TIERS);
+
+  for (const name of names) {
+    const count = QUALITY_TIERS[name].count;
+    const indices = createDistributedIndices(MAX_CUBES, count);
+    const aBase = subsetFloat32Vector3(basePositions, indices);
+    const aTarget = subsetFloat32Vector3(targetPositions, indices);
+    const aSeed = subsetFloat32Scalar(seeds, indices);
+    const aScale = subsetFloat32Scalar(scales, indices);
+
+    sets[name] = {
+      count,
+      attributes: {
+        aBase: new THREE.InstancedBufferAttribute(aBase, 3),
+        aTarget: new THREE.InstancedBufferAttribute(aTarget, 3),
+        aSeed: new THREE.InstancedBufferAttribute(aSeed, 1),
+        aScale: new THREE.InstancedBufferAttribute(aScale, 1),
+      },
+    };
+  }
+
+  return sets;
+}
+
 function isMobileProfile() {
   return window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
 }
@@ -300,6 +385,15 @@ function setTier(name) {
   }
   app.tierName = name;
   applyTierToRenderer();
+}
+
+function shouldFreezeTierCountSwitch() {
+  return app.progress >= LOCK_COUNT_FREEZE_PROGRESS && app.actualRawProgress < CONTENT_REVEAL_RAW_PROGRESS;
+}
+
+function updateContentRevealState() {
+  const introComplete = app.actualRawProgress >= CONTENT_REVEAL_RAW_PROGRESS;
+  document.body.classList.toggle('intro-complete', introComplete);
 }
 
 function demoteTier() {
@@ -335,6 +429,33 @@ function updateIntroLightProgress() {
   document.documentElement.style.setProperty('--intro-light-progress', fadeProgress.toFixed(4));
 }
 
+function debugLogTargetBand(label, targets) {
+  if (!DEBUG_TARGETS || !targets || targets.length < 3) {
+    return;
+  }
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 1; i < targets.length; i += 3) {
+    const y = targets[i];
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+
+  const span = Math.max(1e-6, maxY - minY);
+  const bottomBandMax = minY + span * 0.05;
+  let bottomBandCount = 0;
+  for (let i = 1; i < targets.length; i += 3) {
+    if (targets[i] <= bottomBandMax) {
+      bottomBandCount += 1;
+    }
+  }
+
+  console.info(
+    `[targets:${label}] minY=${minY.toFixed(4)} maxY=${maxY.toFixed(4)} bottom5pct=${bottomBandCount}/${Math.floor(targets.length / 3)}`
+  );
+}
+
 function setupSkipButton() {
   elements.skipButton.addEventListener('click', () => {
     const introTop = window.scrollY + elements.intro.getBoundingClientRect().top;
@@ -346,9 +467,195 @@ function setupSkipButton() {
   });
 }
 
+function getCarouselOriginalItems(track) {
+  return Array.from(track.querySelectorAll(':scope > .figure-item:not([data-carousel-clone="true"])'));
+}
+
+function clearCarouselClones(track) {
+  const clones = track.querySelectorAll(':scope > .figure-item[data-carousel-clone="true"]');
+  for (const clone of clones) {
+    clone.remove();
+  }
+}
+
+function createCarouselClone(item) {
+  const clone = item.cloneNode(true);
+  clone.setAttribute('data-carousel-clone', 'true');
+  clone.setAttribute('aria-hidden', 'true');
+  clone.setAttribute('tabindex', '-1');
+
+  const images = clone.querySelectorAll('img');
+  for (const image of images) {
+    image.alt = '';
+    image.loading = 'eager';
+    image.decoding = 'async';
+  }
+
+  return clone;
+}
+
+function restartCarouselAnimation(track) {
+  track.style.animation = 'none';
+  void track.offsetWidth;
+  track.style.animation = '';
+}
+
+function applyCarouselLoopMetrics(track, loopWidth) {
+  const durationSeconds = Math.max(MIN_CAROUSEL_DURATION_SECONDS, loopWidth / CAROUSEL_PIXELS_PER_SECOND);
+  track.style.setProperty('--carousel-loop-width', `${loopWidth.toFixed(3)}px`);
+  track.style.setProperty('--carousel-duration', `${durationSeconds.toFixed(3)}s`);
+  app.carouselLastGoodLoopWidth = loopWidth;
+  app.carouselLastGoodDurationSeconds = durationSeconds;
+}
+
+function restoreLastGoodCarouselMetrics(track) {
+  if (app.carouselLastGoodLoopWidth <= 0 || app.carouselLastGoodDurationSeconds <= 0) {
+    return false;
+  }
+  track.style.setProperty('--carousel-loop-width', `${app.carouselLastGoodLoopWidth.toFixed(3)}px`);
+  track.style.setProperty('--carousel-duration', `${app.carouselLastGoodDurationSeconds.toFixed(3)}s`);
+  return true;
+}
+
+function ensureImageReady(image) {
+  if (image.complete) {
+    if (typeof image.decode === 'function') {
+      return image.decode().catch(() => {});
+    }
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const finish = () => {
+      if (typeof image.decode === 'function') {
+        image.decode().catch(() => {}).finally(resolve);
+        return;
+      }
+      resolve();
+    };
+    image.addEventListener('load', finish, { once: true });
+    image.addEventListener('error', finish, { once: true });
+  });
+}
+
+function rebuildCollectionCarousel() {
+  const track = app.carouselTrack;
+  if (!track) {
+    return false;
+  }
+
+  const originals = getCarouselOriginalItems(track);
+  if (originals.length < 2) {
+    track.style.animation = 'none';
+    return false;
+  }
+
+  const previousClones = Array.from(track.querySelectorAll(':scope > .figure-item[data-carousel-clone="true"]'));
+  const buildId = String(++app.carouselBuildSeq);
+  const fragment = document.createDocumentFragment();
+  for (const item of originals) {
+    const clone = createCarouselClone(item);
+    clone.setAttribute('data-carousel-build', buildId);
+    fragment.appendChild(clone);
+  }
+  track.appendChild(fragment);
+
+  const firstOriginal = originals[0];
+  const firstClone = track.querySelector(
+    `:scope > .figure-item[data-carousel-clone="true"][data-carousel-build="${buildId}"]`
+  );
+  if (!firstOriginal || !firstClone) {
+    const newClones = track.querySelectorAll(`:scope > .figure-item[data-carousel-build="${buildId}"]`);
+    for (const clone of newClones) {
+      clone.remove();
+    }
+    restoreLastGoodCarouselMetrics(track);
+    return false;
+  }
+
+  const loopWidth = firstClone.offsetLeft - firstOriginal.offsetLeft;
+  if (!Number.isFinite(loopWidth) || loopWidth <= 0) {
+    const newClones = track.querySelectorAll(`:scope > .figure-item[data-carousel-build="${buildId}"]`);
+    for (const clone of newClones) {
+      clone.remove();
+    }
+    restoreLastGoodCarouselMetrics(track);
+    return false;
+  }
+
+  for (const clone of previousClones) {
+    clone.remove();
+  }
+  const committedClones = track.querySelectorAll(`:scope > .figure-item[data-carousel-build="${buildId}"]`);
+  for (const clone of committedClones) {
+    clone.removeAttribute('data-carousel-build');
+  }
+
+  applyCarouselLoopMetrics(track, loopWidth);
+
+  if (app.prefersReducedMotion) {
+    track.style.animation = 'none';
+    return true;
+  }
+
+  restartCarouselAnimation(track);
+  return true;
+}
+
+function scheduleCarouselRebuild() {
+  if (!app.carouselTrack || !app.carouselReady) {
+    return;
+  }
+
+  if (app.carouselBuildInProgress) {
+    app.carouselRebuildQueued = true;
+    return;
+  }
+
+  if (app.carouselResizeRafId) {
+    cancelAnimationFrame(app.carouselResizeRafId);
+  }
+
+  app.carouselResizeRafId = requestAnimationFrame(() => {
+    app.carouselResizeRafId = 0;
+    app.carouselBuildInProgress = true;
+    try {
+      rebuildCollectionCarousel();
+    } finally {
+      app.carouselBuildInProgress = false;
+      if (app.carouselRebuildQueued) {
+        app.carouselRebuildQueued = false;
+        scheduleCarouselRebuild();
+      }
+    }
+  });
+}
+
+function setupCollectionCarousel() {
+  const track = document.querySelector('.carousel-shell .carousel-track');
+  app.carouselTrack = track;
+  if (!track) {
+    return;
+  }
+
+  track.style.animation = 'none';
+
+  const originalImages = Array.from(track.querySelectorAll(':scope > .figure-item img'));
+  for (const image of originalImages) {
+    image.loading = 'eager';
+    image.decoding = 'async';
+  }
+
+  void Promise.all(originalImages.map((image) => ensureImageReady(image))).then(() => {
+    app.carouselReady = true;
+    scheduleCarouselRebuild();
+  });
+}
+
 function updateProgress(nowMs) {
   const raw = computeRawProgress();
   const downwards = raw >= app.lastRawProgress;
+  app.actualRawProgress = raw;
 
   if (raw >= 0.999 && app.lastRawProgress < 0.999 && downwards) {
     app.lockHoldUntil = nowMs + 300;
@@ -377,11 +684,15 @@ function updateProgress(nowMs) {
     app.reducedProgress = lerp(app.reducedFrom, app.reducedTarget, eased);
     app.progress = app.reducedProgress;
     updateIntroLightProgress();
+    updateContentRevealState();
+    flushPendingTierCountChange();
     return;
   }
 
   app.progress = smoothstep(0, 1, heldRaw);
   updateIntroLightProgress();
+  updateContentRevealState();
+  flushPendingTierCountChange();
 }
 
 function buildInstancedMesh() {
@@ -412,12 +723,14 @@ function buildInstancedMesh() {
     scales[i] = 0.78 + (scales[i] / 1000) * 0.7;
   }
 
-  geometry.setAttribute('aBase', new THREE.InstancedBufferAttribute(basePositions, 3));
-  geometry.setAttribute('aTarget', new THREE.InstancedBufferAttribute(targetPositions, 3));
-  geometry.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seeds, 1));
-  geometry.setAttribute('aScale', new THREE.InstancedBufferAttribute(scales, 1));
-
-  geometry.instanceCount = getTier().count;
+  app.tierAttributeSets = createTierAttributeSets(basePositions, targetPositions, seeds, scales);
+  const tierSet = app.tierAttributeSets[app.tierName] ?? app.tierAttributeSets.medium;
+  geometry.setAttribute('aBase', tierSet.attributes.aBase);
+  geometry.setAttribute('aTarget', tierSet.attributes.aTarget);
+  geometry.setAttribute('aSeed', tierSet.attributes.aSeed);
+  geometry.setAttribute('aScale', tierSet.attributes.aScale);
+  geometry.instanceCount = tierSet.count;
+  app.activeTierCountName = app.tierName;
 
   app.uniforms = {
     uTime: { value: 0 },
@@ -449,14 +762,58 @@ function buildInstancedMesh() {
   return mesh;
 }
 
+function applyTierVisualToRenderer() {
+  if (app.rendererType !== 'webgl' || !app.uniforms) {
+    return;
+  }
+
+  const tier = getTier();
+  app.uniforms.uDrift.value = tier.drift;
+  app.uniforms.uNoise.value = tier.noise;
+  app.uniforms.uSweep.value = tier.sweep;
+  resizeRenderer();
+}
+
+function applyTierCountToRenderer(targetTierName, options = {}) {
+  if (app.rendererType !== 'webgl' || !app.mesh || !app.tierAttributeSets) {
+    return;
+  }
+
+  const { force = false } = options;
+  if (!force && shouldFreezeTierCountSwitch()) {
+    app.pendingTierCountName = targetTierName;
+    return;
+  }
+
+  const tierSet = app.tierAttributeSets[targetTierName];
+  if (!tierSet) {
+    return;
+  }
+
+  const geometry = app.mesh.geometry;
+  geometry.setAttribute('aBase', tierSet.attributes.aBase);
+  geometry.setAttribute('aTarget', tierSet.attributes.aTarget);
+  geometry.setAttribute('aSeed', tierSet.attributes.aSeed);
+  geometry.setAttribute('aScale', tierSet.attributes.aScale);
+  geometry.instanceCount = tierSet.count;
+  app.activeTierCountName = targetTierName;
+}
+
+function flushPendingTierCountChange() {
+  if (!app.pendingTierCountName || shouldFreezeTierCountSwitch()) {
+    return;
+  }
+
+  const pendingTier = app.pendingTierCountName;
+  app.pendingTierCountName = null;
+  applyTierCountToRenderer(pendingTier, { force: true });
+}
+
 function applyTierToRenderer() {
-  if (app.rendererType === 'webgl' && app.mesh && app.uniforms) {
-    const tier = getTier();
-    app.mesh.geometry.instanceCount = tier.count;
-    app.uniforms.uDrift.value = tier.drift;
-    app.uniforms.uNoise.value = tier.noise;
-    app.uniforms.uSweep.value = tier.sweep;
-    resizeRenderer();
+  applyTierVisualToRenderer();
+  const targetTierName = getTier().name;
+  if (targetTierName !== app.activeTierCountName) {
+    applyTierCountToRenderer(targetTierName);
   }
 }
 
@@ -571,7 +928,6 @@ function activateStaticFallback() {
   injectStaticWordmarkSvg();
   app.rendererType = 'static';
   setRenderMode('static');
-  document.body.classList.add('renderer-ready');
 
   if (app.renderer) {
     app.renderer.dispose();
@@ -607,40 +963,9 @@ function resizeCanvasFallback() {
 }
 
 function updateAdaptiveTier(nowMs, dtMs) {
-  if (app.prefersReducedMotion || app.rendererType !== 'webgl') {
-    return;
-  }
-
-  const fps = 1000 / Math.max(1, dtMs);
-  app.fpsEma = app.fpsEma * 0.9 + fps * 0.1;
-
-  if (app.fpsEma < 50) {
-    if (!app.fpsLowStart) {
-      app.fpsLowStart = nowMs;
-    }
-    if (nowMs - app.fpsLowStart >= 500) {
-      demoteTier();
-      app.fpsLowStart = nowMs;
-      app.fpsHighStart = 0;
-      app.tierCooldownUntil = nowMs + 1500;
-    }
-  } else {
-    app.fpsLowStart = 0;
-  }
-
-  if (app.fpsEma >= 58) {
-    if (!app.fpsHighStart) {
-      app.fpsHighStart = nowMs;
-    }
-
-    if (nowMs >= app.tierCooldownUntil && nowMs - app.fpsHighStart >= 2000) {
-      promoteTier();
-      app.fpsHighStart = nowMs;
-      app.tierCooldownUntil = nowMs + 1500;
-    }
-  } else {
-    app.fpsHighStart = 0;
-  }
+  // Locked to a fixed quality profile; keep adaptive count/quality switching disabled.
+  void nowMs;
+  void dtMs;
 }
 
 function updateEarlyBench(nowMs) {
@@ -684,11 +1009,6 @@ function renderWebGL(nowMs) {
   app.uniforms.uPointer.value.set(app.pointerX, app.pointerY);
 
   app.renderer.render(app.scene, app.camera);
-
-  if (!app.firstLiveFrameShown) {
-    app.firstLiveFrameShown = true;
-    document.body.classList.add('renderer-ready');
-  }
 }
 
 function renderCanvasFallback(nowMs) {
@@ -736,11 +1056,6 @@ function renderCanvasFallback(nowMs) {
 
     ctx.fillStyle = `rgba(${180 + sweep * 60 + lockPhase * 12}, ${200 + sweep * 58 + lockPhase * 14}, ${cyan}, ${0.78 + lockPhase * 0.16})`;
     ctx.fillRect(screenX - size * 0.5, screenY - size * 0.5, size, size);
-  }
-
-  if (!app.firstLiveFrameShown) {
-    app.firstLiveFrameShown = true;
-    document.body.classList.add('renderer-ready');
   }
 }
 
@@ -802,6 +1117,7 @@ function setupVisibilityHandling() {
 function handleReducedMotionChange(event) {
   app.prefersReducedMotion = event.matches;
   app.uniforms?.uReduced && (app.uniforms.uReduced.value = event.matches ? 1 : 0);
+  scheduleCarouselRebuild();
 }
 
 function setupReducedMotionListener() {
@@ -822,6 +1138,7 @@ function setupResizeHandling() {
       updateRanges();
       resizeRenderer();
       resizeCanvasFallback();
+      scheduleCarouselRebuild();
     },
     { passive: true }
   );
@@ -912,6 +1229,8 @@ async function prepareWordmarkData() {
       depthJitter: 0.015,
       seed: 13,
     });
+    debugLogTargetBand('trace-high', app.wordmarkTargetsHigh);
+    debugLogTargetBand('trace-canvas', app.wordmarkTargetsCanvas);
     return;
   } catch (error) {
     console.warn('PNG wordmark tracing failed; using geometric fallback.', error);
@@ -936,6 +1255,8 @@ async function prepareWordmarkData() {
     depthJitter: 0.015,
     seed: 13,
   });
+  debugLogTargetBand('geom-high', app.wordmarkTargetsHigh);
+  debugLogTargetBand('geom-canvas', app.wordmarkTargetsCanvas);
 }
 
 async function preloadWordmarkFont() {
@@ -952,6 +1273,7 @@ async function preloadWordmarkFont() {
 
 async function init() {
   updateRanges();
+  setupCollectionCarousel();
   await prepareWordmarkData();
   setupSkipButton();
   setupPointerInfluence();
