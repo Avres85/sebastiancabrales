@@ -62,7 +62,6 @@ function isChromeClient() {
 
 const elements = {
   intro: document.getElementById('intro'),
-  skipButton: document.getElementById('skip-intro'),
   glCanvas: document.getElementById('gl-canvas'),
   fallbackCanvas: document.getElementById('fallback-canvas'),
   staticFallback: document.getElementById('static-fallback'),
@@ -473,17 +472,6 @@ function debugLogTargetBand(label, targets) {
   console.info(
     `[targets:${label}] minY=${minY.toFixed(4)} maxY=${maxY.toFixed(4)} bottom5pct=${bottomBandCount}/${Math.floor(targets.length / 3)}`
   );
-}
-
-function setupSkipButton() {
-  elements.skipButton.addEventListener('click', () => {
-    const introTop = window.scrollY + elements.intro.getBoundingClientRect().top;
-    const target = introTop + app.activeRangePx + app.holdRangePx * 0.5;
-    window.scrollTo({
-      top: target,
-      behavior: app.prefersReducedMotion ? 'auto' : 'smooth',
-    });
-  });
 }
 
 function getCarouselOriginalItems(track) {
@@ -1246,6 +1234,7 @@ async function prepareWordmarkData() {
       targetCount: maxCubes,
       sampleStep: 1,
       minSpacing: 0.98,
+      baselineRatio: 0.0,
       contourRatio: 0.34,
       cornerRatio: 0.12,
       minInteriorCount: app.minInteriorCount,
@@ -1268,6 +1257,7 @@ async function prepareWordmarkData() {
       targetCount: CANVAS_CUBES,
       sampleStep: 1.2,
       minSpacing: 1.12,
+      baselineRatio: 0.0,
       contourRatio: 0.33,
       cornerRatio: 0.11,
       minInteriorCount: 1150,
@@ -1330,6 +1320,7 @@ async function preloadWordmarkFont() {
 }
 
 async function init() {
+  document.body.classList.add('intro-managed');
   updateRanges();
   setupCollectionCarousel();
   if (app.forceMaxProfile) {
@@ -1347,7 +1338,6 @@ async function init() {
     app.benchChecked = true;
   }
   await prepareWordmarkData();
-  setupSkipButton();
   setupPointerInfluence();
   setupVisibilityHandling();
   setupReducedMotionListener();
@@ -1366,4 +1356,10 @@ async function init() {
   requestAnimationFrame(loop);
 }
 
-init();
+init().catch((error) => {
+  console.error('Intro initialization failed; showing fallback content.', error);
+  document.body.classList.remove('intro-managed');
+  document.body.classList.add('intro-complete');
+  document.body.removeAttribute('data-render-mode');
+  document.documentElement.style.setProperty('--intro-light-progress', '1');
+});

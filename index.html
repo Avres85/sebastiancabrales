@@ -11,26 +11,16 @@
 
       #gl-canvas,
       #fallback-canvas,
-      #poster,
-      #static-fallback,
-      #content {
+      #static-fallback {
         opacity: 0;
         visibility: hidden;
       }
     </style>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260404c" />
   </head>
   <body>
     <section id="intro" class="intro" aria-label="Opening logo animation">
       <div class="sticky-shell">
-        <button
-          id="skip-intro"
-          class="skip-intro"
-          aria-label="Skip logo animation and show Sebastian wordmark"
-        >
-          Skip animation
-        </button>
-
         <div id="poster" class="poster" aria-hidden="true">
           <div class="poster-noise"></div>
           <div class="poster-wordmark">
@@ -60,7 +50,6 @@
     <main id="content" class="content">
       <section class="section-block media-section" aria-label="Favorite movie scenes">
         <div class="section-header">
-          <p class="section-index">01</p>
           <p class="section-label">Scenes</p>
           <div class="section-rule"></div>
         </div>
@@ -94,7 +83,6 @@
 
       <section class="section-block collection-section" aria-label="Figure collection">
         <div class="section-header">
-          <p class="section-index">02</p>
           <p class="section-label">Collection</p>
           <div class="section-rule"></div>
         </div>
@@ -141,7 +129,6 @@
 
       <section class="section-block projects-section" aria-label="Technical projects">
         <div class="section-header">
-          <p class="section-index">03</p>
           <p class="section-label">Projects</p>
           <div class="section-rule"></div>
         </div>

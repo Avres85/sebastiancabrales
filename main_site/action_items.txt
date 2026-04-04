@@ -4,4 +4,6 @@
 
 3. Adjust layout of gifs -- make hero animimated section background into the same shade of white as the rest of the site, find a way to make the gifs more integrated into the site
 
-
+4. remove numbers from section headers, i.e. remove: 02, 03 01
+ 
+5. Find a way to seamlessly add more infomration about myself, Currenlty thinking of the off-white site main text on screen, but we'll see 
