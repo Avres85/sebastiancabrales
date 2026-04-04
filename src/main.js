@@ -8,8 +8,9 @@ import {
 } from './wordmark.js';
 import { traceWordmarkFromPng } from './wordmark-trace.js';
 
-const MAX_CUBES = 3000;
-const CANVAS_CUBES = 620;
+const BASE_MAX_CUBES = 4400;
+const CHROME_EXTRA_CUBES = 200;
+const CANVAS_CUBES = 1600;
 const ACTIVE_SCROLL_VH = 160;
 const HOLD_SCROLL_VH = 20;
 const INTRO_HEIGHT_VH = 260;
@@ -18,11 +19,14 @@ const CONTENT_REVEAL_RAW_PROGRESS = 0.999;
 const DEBUG_TARGETS = false;
 const CAROUSEL_PIXELS_PER_SECOND = 12.5;
 const MIN_CAROUSEL_DURATION_SECONDS = 18;
+const BASE_MIN_INTERIOR_COUNT = 3100;
+const BASE_MIN_EDGE_COUNT = 1300;
+const CHROME_EXTRA_EDGE_COUNT = 200;
 
 const QUALITY_TIERS = {
   low: {
     name: 'low',
-    count: 3000,
+    count: BASE_MAX_CUBES,
     dpr: 2.0,
     drift: 0.72,
     noise: 0.3,
@@ -30,7 +34,7 @@ const QUALITY_TIERS = {
   },
   medium: {
     name: 'medium',
-    count: 3000,
+    count: BASE_MAX_CUBES,
     dpr: 2.0,
     drift: 0.72,
     noise: 0.3,
@@ -38,7 +42,7 @@ const QUALITY_TIERS = {
   },
   high: {
     name: 'high',
-    count: 3000,
+    count: BASE_MAX_CUBES,
     dpr: 2.0,
     drift: 0.72,
     noise: 0.3,
@@ -47,6 +51,14 @@ const QUALITY_TIERS = {
 };
 
 const TIER_ORDER = ['low', 'medium', 'high'];
+
+function isChromeClient() {
+  const ua = navigator.userAgent || '';
+  const vendor = navigator.vendor || '';
+  const isGoogleChrome = /Chrome|CriOS/.test(ua) && /Google Inc/i.test(vendor);
+  const isExcludedChromium = /Edg|OPR|Brave|SamsungBrowser/.test(ua);
+  return isGoogleChrome && !isExcludedChromium;
+}
 
 const elements = {
   intro: document.getElementById('intro'),
@@ -101,6 +113,10 @@ const app = {
   carouselBuildSeq: 0,
   carouselLastGoodLoopWidth: 0,
   carouselLastGoodDurationSeconds: 0,
+  forceMaxProfile: isChromeClient(),
+  maxCubes: BASE_MAX_CUBES,
+  minInteriorCount: BASE_MIN_INTERIOR_COUNT,
+  minEdgeCount: BASE_MIN_EDGE_COUNT,
   // WebGL runtime
   renderer: null,
   scene: null,
@@ -115,11 +131,14 @@ const app = {
   canvasHeight: 0,
   canvasBase: null,
   canvasTarget: null,
+  canvasTargetScale: null,
   canvasSeed: null,
   // Wordmark source data
   wordmarkSvgData: null,
   wordmarkTargetsHigh: null,
+  wordmarkTargetScaleHigh: null,
   wordmarkTargetsCanvas: null,
+  wordmarkTargetScaleCanvas: null,
   staticWordmarkInjected: false,
 };
 
@@ -219,7 +238,7 @@ void main() {
   float spin = (uTime * 0.23 + aSeed * 0.014) * (1.0 - lock * 0.82) * (1.0 - reduced);
   mat3 rot = rotY(spin) * rotX(spin * 0.58 + rand.x) * rotZ(spin * 0.39 + rand.y);
 
-  float convergenceScale = mix(1.0, .325, lockTighten);
+  float convergenceScale = mix(1.0, 0.42, lockTighten);
   vec3 local = position * (0.15 * aScale * convergenceScale);
   vec3 transformed = rot * local + finalPos;
 
@@ -336,13 +355,13 @@ function subsetFloat32Scalar(source, indices) {
   return out;
 }
 
-function createTierAttributeSets(basePositions, targetPositions, seeds, scales) {
+function createTierAttributeSets(basePositions, targetPositions, seeds, scales, totalCount) {
   const sets = {};
   const names = Object.keys(QUALITY_TIERS);
 
   for (const name of names) {
     const count = QUALITY_TIERS[name].count;
-    const indices = createDistributedIndices(MAX_CUBES, count);
+    const indices = createDistributedIndices(totalCount, count);
     const aBase = subsetFloat32Vector3(basePositions, indices);
     const aTarget = subsetFloat32Vector3(targetPositions, indices);
     const aSeed = subsetFloat32Scalar(seeds, indices);
@@ -696,34 +715,40 @@ function updateProgress(nowMs) {
 }
 
 function buildInstancedMesh() {
+  const maxCubes = app.maxCubes;
   const baseGeometry = new THREE.BoxGeometry(1, 1, 1);
   const geometry = new THREE.InstancedBufferGeometry();
   geometry.index = baseGeometry.index;
   geometry.attributes.position = baseGeometry.attributes.position;
   geometry.attributes.normal = baseGeometry.attributes.normal;
 
-  const basePositions = createBaseSwarmPositions(MAX_CUBES, 101);
+  const basePositions = createBaseSwarmPositions(maxCubes, 101);
   const targetPositions =
-    app.wordmarkTargetsHigh && app.wordmarkTargetsHigh.length === MAX_CUBES * 3
+    app.wordmarkTargetsHigh && app.wordmarkTargetsHigh.length === maxCubes * 3
       ? app.wordmarkTargetsHigh
       : createSebastianTargets({
-          targetCount: MAX_CUBES,
+          targetCount: maxCubes,
           sampleStep: 0.032,
-          minSpacing: 0.021,
+          minSpacing: 0.018,
           tracking: 0.08,
           height: 1.3,
-          depthJitter: 0.045,
+          depthJitter: 0.03,
           seed: 73,
         });
-  const seeds = createSeeds(MAX_CUBES, 31);
-  const scales = createSeeds(MAX_CUBES, 49);
+  const seeds = createSeeds(maxCubes, 31);
+  const scales = createSeeds(maxCubes, 49);
+  const targetPointScales =
+    app.wordmarkTargetScaleHigh && app.wordmarkTargetScaleHigh.length === maxCubes
+      ? app.wordmarkTargetScaleHigh
+      : null;
 
-  for (let i = 0; i < MAX_CUBES; i += 1) {
+  for (let i = 0; i < maxCubes; i += 1) {
     // createSeeds() returns [0..1000), normalize before using as size variance
-    scales[i] = 0.78 + (scales[i] / 1000) * 0.7;
+    const baseScale = 0.78 + (scales[i] / 1000) * 0.7;
+    scales[i] = baseScale * (targetPointScales ? targetPointScales[i] : 1.0);
   }
 
-  app.tierAttributeSets = createTierAttributeSets(basePositions, targetPositions, seeds, scales);
+  app.tierAttributeSets = createTierAttributeSets(basePositions, targetPositions, seeds, scales, maxCubes);
   const tierSet = app.tierAttributeSets[app.tierName] ?? app.tierAttributeSets.medium;
   geometry.setAttribute('aBase', tierSet.attributes.aBase);
   geometry.setAttribute('aTarget', tierSet.attributes.aTarget);
@@ -840,12 +865,10 @@ function initWebGLRenderer() {
       elements.glCanvas.getContext('webgl2', {
         alpha: true,
         antialias: false,
-        failIfMajorPerformanceCaveat: true,
       }) ||
       elements.glCanvas.getContext('webgl', {
         alpha: true,
         antialias: false,
-        failIfMajorPerformanceCaveat: true,
       });
   } catch (error) {
     return false;
@@ -910,12 +933,16 @@ function initCanvasFallback() {
       : createSebastianTargets({
           targetCount: CANVAS_CUBES,
           sampleStep: 0.039,
-          minSpacing: 0.026,
+          minSpacing: 0.022,
           tracking: 0.08,
           height: 1.28,
-          depthJitter: 0.015,
+          depthJitter: 0.01,
           seed: 13,
         });
+  app.canvasTargetScale =
+    app.wordmarkTargetScaleCanvas && app.wordmarkTargetScaleCanvas.length === CANVAS_CUBES
+      ? app.wordmarkTargetScaleCanvas
+      : null;
   app.canvasSeed = createSeeds(CANVAS_CUBES, 811);
 
   app.rendererType = 'canvas';
@@ -969,7 +996,7 @@ function updateAdaptiveTier(nowMs, dtMs) {
 }
 
 function updateEarlyBench(nowMs) {
-  if (app.rendererType !== 'webgl' || app.benchChecked) {
+  if (app.rendererType !== 'webgl' || app.benchChecked || app.forceMaxProfile) {
     return;
   }
 
@@ -986,7 +1013,7 @@ function updateEarlyBench(nowMs) {
   const avgFps = (app.benchFrames / elapsed) * 1000;
   app.benchChecked = true;
 
-  if (avgFps < 30) {
+  if (avgFps < 24) {
     activateStaticFallback();
   }
 }
@@ -1049,7 +1076,8 @@ function renderCanvasFallback(nowMs) {
     const perspective = 22 / (22 + z + 14);
     const screenX = width * 0.5 + x * scale * perspective;
     const screenY = height * 0.5 - y * scale * perspective;
-    const size = (1.4 + (seed % 1.2)) * perspective * lerp(1, 0.6, lockPhase);
+    const pointScale = app.canvasTargetScale ? app.canvasTargetScale[i] : 1.0;
+    const size = (1.4 + (seed % 1.2)) * perspective * lerp(1, 0.6, lockPhase) * pointScale;
 
     const sweep = Math.exp(-Math.pow((screenX / width) * 2 - 1 - sweepPos, 2) * 36) * lockPhase;
     const cyan = 120 + sweep * 125 + lockPhase * 20;
@@ -1199,6 +1227,7 @@ function injectStaticWordmarkSvg() {
 }
 
 async function prepareWordmarkData() {
+  const maxCubes = app.maxCubes;
   try {
     const traced = await traceWordmarkFromPng('./fontimages/fixedname.png', {
       alphaThreshold: 18,
@@ -1213,22 +1242,49 @@ async function prepareWordmarkData() {
     const tracedHeight = clamp(desiredWorldWidth / traced.aspect, 1.18, 2.45);
 
     app.wordmarkSvgData = traced.svg;
-    app.wordmarkTargetsHigh = traced.createTargets({
-      targetCount: MAX_CUBES,
+    const tracedHighTargets = traced.createTargets({
+      targetCount: maxCubes,
       sampleStep: 1,
-      minSpacing: 1.15,
+      minSpacing: 0.98,
+      contourRatio: 0.34,
+      cornerRatio: 0.12,
+      minInteriorCount: app.minInteriorCount,
+      minEdgeCount: app.minEdgeCount,
+      typeScaleInterior: 1.1,
+      typeScaleBaseline: 1.0,
+      typeScaleContour: 0.8,
+      typeScaleCorner: 0.64,
       height: tracedHeight,
-      depthJitter: 0.045,
+      depthJitter: 0.028,
       seed: 73,
     });
-    app.wordmarkTargetsCanvas = traced.createTargets({
+    app.wordmarkTargetsHigh = tracedHighTargets;
+    app.wordmarkTargetScaleHigh =
+      tracedHighTargets.pointScales && tracedHighTargets.pointScales.length === maxCubes
+        ? tracedHighTargets.pointScales
+        : null;
+
+    const tracedCanvasTargets = traced.createTargets({
       targetCount: CANVAS_CUBES,
       sampleStep: 1.2,
-      minSpacing: 1.35,
+      minSpacing: 1.12,
+      contourRatio: 0.33,
+      cornerRatio: 0.11,
+      minInteriorCount: 1150,
+      minEdgeCount: 450,
+      typeScaleInterior: 1.1,
+      typeScaleBaseline: 1.0,
+      typeScaleContour: 0.8,
+      typeScaleCorner: 0.64,
       height: tracedHeight * 0.985,
-      depthJitter: 0.015,
+      depthJitter: 0.01,
       seed: 13,
     });
+    app.wordmarkTargetsCanvas = tracedCanvasTargets;
+    app.wordmarkTargetScaleCanvas =
+      tracedCanvasTargets.pointScales && tracedCanvasTargets.pointScales.length === CANVAS_CUBES
+        ? tracedCanvasTargets.pointScales
+        : null;
     debugLogTargetBand('trace-high', app.wordmarkTargetsHigh);
     debugLogTargetBand('trace-canvas', app.wordmarkTargetsCanvas);
     return;
@@ -1238,23 +1294,25 @@ async function prepareWordmarkData() {
 
   app.wordmarkSvgData = createSebastianWordmarkSvg({ tracking: 0.08, padding: 0.09 });
   app.wordmarkTargetsHigh = createSebastianTargets({
-    targetCount: MAX_CUBES,
+    targetCount: maxCubes,
     sampleStep: 0.032,
-    minSpacing: 0.021,
+    minSpacing: 0.018,
     tracking: 0.08,
     height: 1.3,
-    depthJitter: 0.045,
+    depthJitter: 0.03,
     seed: 73,
   });
   app.wordmarkTargetsCanvas = createSebastianTargets({
     targetCount: CANVAS_CUBES,
     sampleStep: 0.039,
-    minSpacing: 0.026,
+    minSpacing: 0.022,
     tracking: 0.08,
     height: 1.28,
-    depthJitter: 0.015,
+    depthJitter: 0.01,
     seed: 13,
   });
+  app.wordmarkTargetScaleHigh = null;
+  app.wordmarkTargetScaleCanvas = null;
   debugLogTargetBand('geom-high', app.wordmarkTargetsHigh);
   debugLogTargetBand('geom-canvas', app.wordmarkTargetsCanvas);
 }
@@ -1274,6 +1332,20 @@ async function preloadWordmarkFont() {
 async function init() {
   updateRanges();
   setupCollectionCarousel();
+  if (app.forceMaxProfile) {
+    app.maxCubes = BASE_MAX_CUBES + CHROME_EXTRA_CUBES;
+    app.minEdgeCount = BASE_MIN_EDGE_COUNT + CHROME_EXTRA_EDGE_COUNT;
+  }
+  if (app.maxCubes < app.minInteriorCount + app.minEdgeCount) {
+    app.minInteriorCount = Math.max(0, app.maxCubes - app.minEdgeCount);
+  }
+  for (const tierName of Object.keys(QUALITY_TIERS)) {
+    QUALITY_TIERS[tierName].count = app.maxCubes;
+  }
+  if (app.forceMaxProfile) {
+    app.tierName = 'high';
+    app.benchChecked = true;
+  }
   await prepareWordmarkData();
   setupSkipButton();
   setupPointerInfluence();

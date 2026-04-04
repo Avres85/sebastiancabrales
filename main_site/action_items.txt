@@ -1,0 +1,7 @@
+1. Remove skip Animation Butotn 
+
+2. Remove horizontal and vertical guide lines in the main intro animation, 
+
+3. Adjust layout of gifs -- make hero animimated section background into the same shade of white as the rest of the site, find a way to make the gifs more integrated into the site
+
+
