@@ -169,3 +169,52 @@ The current site is a **vanilla HTML/CSS/JS prototype** — not yet the final st
 - No pause-on-hover for carousel
 - `sebastianname.png` and `allspark.jpg` are unused assets
 - `.DS_Store` files are committed (should be gitignored)
+
+---
+
+## 2026-06-05 Current-State Addendum
+
+This repository is currently a **static vanilla site** with no package manifest or build step. Open/run it as static files, but `index.html` depends on ES modules and imports Three.js from `https://unpkg.com/three@0.161.0/build/three.module.js`, so the main animation needs browser module support and network access to the CDN unless Three.js is vendored later.
+
+### Current top-level page structure
+- `index.html` is the only homepage shell. It links `styles.css?v=20260404d` and `src/main.js`.
+- The intro has four mutually exclusive render layers: `#poster`, `#gl-canvas`, `#fallback-canvas`, and `#static-fallback`. Visibility is controlled by `body[data-render-mode]`.
+- `#content` contains three sections in this order:
+  1. `.media-section` with three GIFs and L-corner pseudo-elements.
+  2. `#collection.section-block` with seven carousel links to static review pages.
+  3. `.projects-section` with three placeholder module cards.
+
+### Runtime relationships in `src/main.js`
+- `init()` adds `body.intro-managed`, loads any saved carousel state, updates responsive scroll ranges, sets up the collection carousel, prepares wordmark targets, binds pointer/visibility/reduced-motion/resize handlers, then chooses WebGL → canvas → static fallback.
+- The hero's target wordmark source is still `fontimages/fixedname.png` through `traceWordmarkFromPng()`. If tracing fails, it falls back to procedural geometry from `src/wordmark.js`.
+- Chrome receives a max-profile path: `app.forceMaxProfile` increases `maxCubes` from `4400` to `4600` and edge target minimums from `1300` to `1500`.
+- `updateAdaptiveTier()` is currently intentionally disabled; tier names still exist, but all active tier counts are set to `app.maxCubes` during init.
+- On mobile profile (`max-width: 900px` or coarse pointer), `updateRanges()` halves active/hold scroll distance and writes a pixel value to `--intro-height` to avoid iOS Safari `vh` mismatch. Wordmark target height is also scaled by `0.62`.
+- `body.intro-complete` is controlled by `app.actualRawProgress >= 0.999`; this reveals `#content` and completes the white overlay via `--intro-light-progress`.
+
+### Carousel current behavior
+- The old CSS keyframe carousel is no longer the active motion mechanism. `.carousel-track` has `animation: none`; movement is driven every frame by JS setting `transform: translate3d(...)`.
+- `rebuildCollectionCarousel()` clones the original `.figure-item` links, measures loop width by comparing the first clone and first original offsets, then removes old clones after the new clone set is valid.
+- `updateCarouselMotion(dtMs)` advances `app.carouselPhasePx` at `CAROUSEL_PIXELS_PER_SECOND` plus temporary wheel/drag velocity, then eases velocity back to zero.
+- Users can drag the carousel horizontally. Horizontal wheel/Shift-wheel also nudges phase. Clicks are suppressed briefly after drag/wheel to avoid accidental navigation.
+- Review navigation preservation uses `sessionStorage` key `transformsite.carousel.state.v1`. When opening a figure link, JS saves scroll position, phase, loop width, duration, and velocity. Returning to `../index.html#collection` restores scroll and carousel phase if the saved state is under six hours old.
+- The CSS variables `--carousel-loop-width` and `--carousel-duration` are still written, but duration is now mainly retained for metrics/state compatibility rather than CSS animation.
+
+### Review pages now exist
+- The previous note that `/reviews/figure-N.html` pages do not exist is stale. `reviews/figure-1.html` through `reviews/figure-7.html` now exist and share `reviews/review.css?v=20260404c`.
+- `reviews/figure-template.html` is a placeholder-token template, and `reviews/review-schema.md` documents the intended fields for future figure/project detail pages.
+- Review pages are static, hand-authored HTML, not generated from `color-palettes.json` or any data file.
+- Footer nav mostly chains previous/next review pages; `figure-1.html` currently only has "Return to Portfolio" and "Next Review", while later pages include previous/next links as available.
+- All review pages link back to `../index.html#collection`, which is what triggers carousel state restoration on the homepage.
+
+### Styling current state
+- `styles.css` now uses a pure white site surface: `--site-surface`, `--mist-white`, and `--clean-panel-white` are `#ffffff`.
+- `.media-section` is no longer a `.section-block`; it is an 85%-wide unframed block on desktop with a 3-column GIF grid, 2px gaps, multiply-blended GIFs, and corner-line pseudo-elements. At `900px`, it becomes full width, 12px padded, and single column.
+- Mobile CSS includes `viewport-fit=cover` support from the HTML meta tag, `100svh` for `.sticky-shell`, safe-area-aware `.content` padding, `html { overflow-x: hidden; }`, single-column project cards, smaller carousel cards, and touch-hover fixes.
+- `reviews/review.css` is a separate review-page design system using a Google Fonts import for `Space Mono`; it does not reuse homepage CSS directly.
+
+### Current data/content gotchas
+- `main_page_graphics/carousel_images/color-palettes.json` exists but homepage swatches are still hardcoded inline on each carousel `<a>`.
+- Figure 6 display text and alt text say `RX-93 Nu Gundam`, but the asset filename is `RX-73 Nu Gundam .png`.
+- `main_site/action_items.md` shows the completed requests to remove the skip button, remove guide lines, and remove numbered section headers. Open items remain GIF-section integration and adding more personal/about information.
+- `reviews/` and `.claude/` are currently untracked in git status, while `index.html`, `src/main.js`, and `styles.css` have existing modifications. Treat these as user-owned unless explicitly asked to clean them up.

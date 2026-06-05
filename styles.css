@@ -20,9 +20,9 @@
   --cold-cyan: #9be7ff;
   --ice-glow: #d9f7ff;
   --plasma-violet: #8e79ff;
-  --site-surface: #e7edf4;
-  --mist-white: var(--site-surface);
-  --clean-panel-white: var(--site-surface);
+  --site-surface: #ffffff;
+  --mist-white: #ffffff;
+  --clean-panel-white: #ffffff;
   --cool-surface-gray: #eef2f6;
   --text: #d9e2ef;
   --intro-light-progress: 0;
@@ -260,14 +260,60 @@ body.intro-managed.intro-complete #content {
 }
 
 .media-section {
-  display: grid;
-  gap: 0.8rem;
+  display: block;
+  position: relative;
+  width: 85%;
+  margin-inline: auto;
+  /* Padding creates the gap between L marks and the GIF edges */
+  padding: 20px;
 }
 
 .media-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 2px;
+}
+
+/* Top-right L — each arm has its own gradient, fading toward the tip */
+.media-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 110px;
+  height: 110px;
+  pointer-events: none;
+  z-index: 1;
+  transform: skewX(-2.5deg);
+  transform-origin: top right;
+  background:
+    /* Horizontal arm: solid at right, fades left */
+    linear-gradient(to left, var(--ink) 0%, transparent 100%)
+      right top / 100% 1px no-repeat,
+    /* Vertical arm: solid at top, fades down */
+    linear-gradient(to bottom, var(--ink) 0%, transparent 100%)
+      right top / 1px 100% no-repeat;
+}
+
+/* Bottom-left L — mirror geometry and gradient directions */
+.media-section::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 110px;
+  height: 110px;
+  pointer-events: none;
+  z-index: 1;
+  transform: skewX(-2.5deg);
+  transform-origin: bottom left;
+  background:
+    /* Horizontal arm: solid at left, fades right */
+    linear-gradient(to right, var(--ink) 0%, transparent 100%)
+      left bottom / 100% 1px no-repeat,
+    /* Vertical arm: solid at bottom, fades up */
+    linear-gradient(to top, var(--ink) 0%, transparent 100%)
+      left bottom / 1px 100% no-repeat;
 }
 
 .media-card {
@@ -275,7 +321,7 @@ body.intro-managed.intro-complete #content {
   border: none;
   border-radius: 0;
   overflow: hidden;
-  background: var(--void-black);
+  background: transparent;
   box-shadow: none;
 }
 
@@ -285,6 +331,7 @@ body.intro-managed.intro-complete #content {
   height: auto;
   aspect-ratio: 16 / 9;
   object-fit: cover;
+  mix-blend-mode: multiply;
 }
 
 .collection-section {
@@ -299,6 +346,9 @@ body.intro-managed.intro-complete #content {
   background:
     linear-gradient(180deg, rgba(17, 27, 39, 0.05), rgba(79, 92, 107, 0.02)),
     var(--clean-panel-white);
+  touch-action: pan-y;
+  cursor: grab;
+  user-select: none;
 }
 
 .carousel-track {
@@ -307,9 +357,12 @@ body.intro-managed.intro-complete #content {
   gap: 0.8rem;
   padding: 0.8rem;
   --carousel-loop-width: 0px;
-  --carousel-duration: 110s;
-  animation: figure-loop var(--carousel-duration) linear infinite;
+  --carousel-phase: 0px;
   will-change: transform;
+}
+
+.carousel-shell:active {
+  cursor: grabbing;
 }
 
 .figure-item {
@@ -330,12 +383,12 @@ body.intro-managed.intro-complete #content {
 .figure-item:hover,
 .figure-item:focus-visible {
   transform: translateY(-2px);
-  border-color: var(--swatch-a, var(--energon-blue));
-  box-shadow: 0 0 0 1px var(--swatch-a, var(--energon-blue));
+  border-color: var(--swatch-a, var(--ink));
+  box-shadow: 0 0 0 1px var(--swatch-a, var(--ink));
 }
 
 .figure-item:focus-visible {
-  outline: 2px solid var(--energon-blue);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
@@ -433,43 +486,104 @@ body.intro-managed.intro-complete #content {
   line-height: 1.48;
 }
 
-@keyframes figure-loop {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-  100% {
-    transform: translate3d(calc(-1 * var(--carousel-loop-width)), 0, 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .carousel-track {
-    animation: none;
-  }
-}
-
 @media (max-width: 900px) {
   .wordmark-svg {
-    width: min(94vw, 560px);
+    width: min(64vw, 360px);
   }
 
+  /* --- 100vh fix for iOS Safari dynamic toolbar ---
+     100vh on iOS includes the area behind the address bar.
+     Use 100svh (small viewport height) as the primary value so the
+     sticky shell never extends behind the toolbar, with 100vh as
+     fallback for browsers that don't support svh. */
+  .sticky-shell {
+    height: 100vh;
+    height: 100svh;
+  }
+
+  /* --- Content padding with safe-area insets ---
+     Ensures content isn't clipped by the notch or home indicator
+     on edge-to-edge iPhones. env() returns 0px on devices without
+     insets, so this is a no-op on non-notched devices. */
   .content {
-    padding-inline: 1rem;
+    padding: 6vh 1rem 12vh;
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(12vh, calc(12vh + env(safe-area-inset-bottom)));
+  }
+
+  /* --- Prevent horizontal overflow ---
+     The full-width media section plus the 110px absolute-positioned
+     L-mark pseudo-elements can cause horizontal scroll on narrow
+     viewports. Clip overflow on the page root. */
+  html {
+    overflow-x: hidden;
+  }
+
+  .media-section {
+    width: 100%;
+    /* Shrink padding so L-marks don't extend beyond viewport edge */
+    padding: 12px;
+  }
+
+  /* Scale down L-marks on small screens so they don't dominate or overflow */
+  .media-section::before,
+  .media-section::after {
+    width: 60px;
+    height: 60px;
   }
 
   .media-grid {
     grid-template-columns: 1fr;
   }
 
+  /* --- Project cards: remove fixed min-height for single column ---
+     164px min-height is needed for the 3-column grid; in single
+     column the cards should size to content. */
   .projects-grid {
     grid-template-columns: 1fr;
   }
 
+  .project-card {
+    min-height: auto;
+  }
+
+  /* --- Carousel: improve touch-friendliness ---
+     Larger tap targets (minimum 44px per Apple HIG) and disable
+     hover effects that cause "sticky hover" on touch devices. */
   .figure-item {
     flex-basis: 160px;
+    /* Ensure minimum 44px tap target height via padding */
+    min-height: 44px;
   }
 
   .figure-item img {
     height: 148px;
+  }
+
+  /* Pause carousel animation on touch to allow intentional tapping.
+     The animation-play-state is toggled via :active on the shell. */
+  .carousel-shell:active .carousel-track {
+    animation-play-state: paused;
+  }
+
+  /* Disable hover transform on touch — it "sticks" on mobile */
+  .figure-item:hover {
+    transform: none;
+    border-color: var(--panel-border);
+    box-shadow: none;
+  }
+
+  /* Keep focus-visible for keyboard navigation on mobile */
+  .figure-item:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--swatch-a, var(--ink));
+    box-shadow: 0 0 0 1px var(--swatch-a, var(--ink));
+  }
+
+  /* --- Section block padding tweak ---
+     Slightly reduce section padding on mobile for more content area */
+  .section-block {
+    padding: clamp(0.75rem, 2vw, 1.5rem);
   }
 }

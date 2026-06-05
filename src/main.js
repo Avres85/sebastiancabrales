@@ -18,7 +18,12 @@ const LOCK_COUNT_FREEZE_PROGRESS = 0.72;
 const CONTENT_REVEAL_RAW_PROGRESS = 0.999;
 const DEBUG_TARGETS = false;
 const CAROUSEL_PIXELS_PER_SECOND = 12.5;
+const CAROUSEL_WHEEL_BOOST = 0.9;
+const CAROUSEL_DRAG_BOOST = 1.1;
+const CAROUSEL_VELOCITY_FRICTION = 6.5;
 const MIN_CAROUSEL_DURATION_SECONDS = 18;
+const CAROUSEL_STATE_STORAGE_KEY = 'transformsite.carousel.state.v1';
+const CAROUSEL_STATE_MAX_AGE_MS = 1000 * 60 * 60 * 6;
 const BASE_MIN_INTERIOR_COUNT = 3100;
 const BASE_MIN_EDGE_COUNT = 1300;
 const CHROME_EXTRA_EDGE_COUNT = 200;
@@ -107,11 +112,24 @@ const app = {
   carouselTrack: null,
   carouselResizeRafId: 0,
   carouselReady: false,
+  carouselMotionReady: false,
   carouselBuildInProgress: false,
   carouselRebuildQueued: false,
   carouselBuildSeq: 0,
   carouselLastGoodLoopWidth: 0,
   carouselLastGoodDurationSeconds: 0,
+  carouselPhasePx: 0,
+  carouselVelocityPxPerSec: 0,
+  carouselDragActive: false,
+  carouselDragPointerId: null,
+  carouselDragStartX: 0,
+  carouselDragStartY: 0,
+  carouselDragLastX: 0,
+  carouselDragLastTime: 0,
+  carouselSuppressClickUntil: 0,
+  carouselInteractionBound: false,
+  carouselRestoreState: null,
+  carouselRestoreApplied: false,
   forceMaxProfile: isChromeClient(),
   maxCubes: BASE_MAX_CUBES,
   minInteriorCount: BASE_MIN_INTERIOR_COUNT,
@@ -435,11 +453,29 @@ function computeRawProgress() {
 }
 
 function updateRanges() {
-  app.activeRangePx = vhToPx(ACTIVE_SCROLL_VH);
-  app.holdRangePx = vhToPx(HOLD_SCROLL_VH);
-  document.body.style.setProperty('--intro-height', `${INTRO_HEIGHT_VH}vh`);
-  document.body.style.setProperty('--active-scroll', `${ACTIVE_SCROLL_VH}vh`);
-  document.body.style.setProperty('--hold-scroll', `${HOLD_SCROLL_VH}vh`);
+  if (isMobileProfile()) {
+    // Halve scroll distances on mobile to reduce blank space around the wordmark.
+    // Intro height = viewport (100vh) + active scroll + hold scroll, computed in
+    // pixels to avoid the iOS Safari vh mismatch with window.innerHeight.
+    const mobileActiveVh = ACTIVE_SCROLL_VH * 0.5;
+    const mobileHoldVh = HOLD_SCROLL_VH * 0.5;
+    const mobileIntroVh = 100 + mobileActiveVh + mobileHoldVh;
+
+    app.activeRangePx = vhToPx(mobileActiveVh);
+    app.holdRangePx = vhToPx(mobileHoldVh);
+
+    const introHeightPx = window.innerHeight * (mobileIntroVh / 100);
+    document.body.style.setProperty('--intro-height', `${introHeightPx}px`);
+    document.body.style.setProperty('--active-scroll', `${mobileActiveVh}vh`);
+    document.body.style.setProperty('--hold-scroll', `${mobileHoldVh}vh`);
+  } else {
+    app.activeRangePx = vhToPx(ACTIVE_SCROLL_VH);
+    app.holdRangePx = vhToPx(HOLD_SCROLL_VH);
+
+    document.body.style.setProperty('--intro-height', `${INTRO_HEIGHT_VH}vh`);
+    document.body.style.setProperty('--active-scroll', `${ACTIVE_SCROLL_VH}vh`);
+    document.body.style.setProperty('--hold-scroll', `${HOLD_SCROLL_VH}vh`);
+  }
 }
 
 function updateIntroLightProgress() {
@@ -478,6 +514,145 @@ function getCarouselOriginalItems(track) {
   return Array.from(track.querySelectorAll(':scope > .figure-item:not([data-carousel-clone="true"])'));
 }
 
+function normalizeCarouselPhase(phasePx, loopWidth) {
+  if (!Number.isFinite(loopWidth) || loopWidth <= 0 || !Number.isFinite(phasePx)) {
+    return 0;
+  }
+  return ((phasePx % loopWidth) + loopWidth) % loopWidth;
+}
+
+function parseTransformTranslateX(transformValue) {
+  if (!transformValue || transformValue === 'none') {
+    return 0;
+  }
+
+  const matrix3dMatch = transformValue.match(/^matrix3d\((.+)\)$/);
+  if (matrix3dMatch) {
+    const values = matrix3dMatch[1].split(',').map((value) => Number.parseFloat(value.trim()));
+    if (values.length === 16 && Number.isFinite(values[12])) {
+      return values[12];
+    }
+  }
+
+  const matrixMatch = transformValue.match(/^matrix\((.+)\)$/);
+  if (matrixMatch) {
+    const values = matrixMatch[1].split(',').map((value) => Number.parseFloat(value.trim()));
+    if (values.length === 6 && Number.isFinite(values[4])) {
+      return values[4];
+    }
+  }
+
+  return 0;
+}
+
+function saveCarouselState(track) {
+  if (!track || app.prefersReducedMotion) {
+    return;
+  }
+
+  const computedStyle = getComputedStyle(track);
+  const loopWidthFromVar = Number.parseFloat(computedStyle.getPropertyValue('--carousel-loop-width'));
+  const durationFromVar = Number.parseFloat(computedStyle.getPropertyValue('--carousel-duration'));
+  const loopWidth = Number.isFinite(loopWidthFromVar) && loopWidthFromVar > 0 ? loopWidthFromVar : app.carouselLastGoodLoopWidth;
+  const durationSeconds =
+    Number.isFinite(durationFromVar) && durationFromVar > 0 ? durationFromVar : app.carouselLastGoodDurationSeconds;
+
+  if (!Number.isFinite(loopWidth) || loopWidth <= 0 || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return;
+  }
+
+  const phasePx = Number.isFinite(app.carouselPhasePx)
+    ? normalizeCarouselPhase(app.carouselPhasePx, loopWidth)
+    : ((-parseTransformTranslateX(computedStyle.transform) % loopWidth) + loopWidth) % loopWidth;
+  const payload = {
+    at: Date.now(),
+    pathname: window.location.pathname,
+    scrollY: window.scrollY,
+    phasePx,
+    loopWidth,
+    durationSeconds,
+    velocityPxPerSec: app.carouselVelocityPxPerSec,
+  };
+
+  try {
+    sessionStorage.setItem(CAROUSEL_STATE_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    // Ignore sessionStorage failures.
+  }
+}
+
+function loadSavedCarouselState() {
+  if (window.location.hash !== '#collection') {
+    return;
+  }
+
+  let parsed;
+  try {
+    const raw = sessionStorage.getItem(CAROUSEL_STATE_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return;
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return;
+  }
+  if (!Number.isFinite(parsed.at) || Date.now() - parsed.at > CAROUSEL_STATE_MAX_AGE_MS) {
+    return;
+  }
+  if (!Number.isFinite(parsed.phasePx) || !Number.isFinite(parsed.loopWidth) || parsed.loopWidth <= 0) {
+    return;
+  }
+
+  app.carouselRestoreState = parsed;
+  app.carouselRestoreApplied = false;
+}
+
+function clearSavedCarouselState() {
+  app.carouselRestoreState = null;
+  try {
+    sessionStorage.removeItem(CAROUSEL_STATE_STORAGE_KEY);
+  } catch (error) {
+    // Ignore sessionStorage failures.
+  }
+}
+
+function consumeSavedCarouselState(track) {
+  const saved = app.carouselRestoreState;
+  if (!track || !saved || app.carouselRestoreApplied || app.prefersReducedMotion) {
+    return null;
+  }
+
+  const activeLoopWidth = app.carouselLastGoodLoopWidth;
+  if (!Number.isFinite(activeLoopWidth) || activeLoopWidth <= 0) {
+    return null;
+  }
+
+  let normalizedPhasePx = saved.phasePx;
+  if (Number.isFinite(saved.loopWidth) && saved.loopWidth > 0 && saved.loopWidth !== activeLoopWidth) {
+    normalizedPhasePx = (saved.phasePx / saved.loopWidth) * activeLoopWidth;
+  }
+  normalizedPhasePx = normalizeCarouselPhase(normalizedPhasePx, activeLoopWidth);
+
+  if (Number.isFinite(saved.scrollY) && saved.scrollY >= 0) {
+    requestAnimationFrame(() => {
+      window.scrollTo({
+        top: saved.scrollY,
+        behavior: 'auto',
+      });
+    });
+  }
+
+  app.carouselRestoreApplied = true;
+  app.carouselPhasePx = normalizedPhasePx;
+  app.carouselVelocityPxPerSec = Number.isFinite(saved.velocityPxPerSec) ? saved.velocityPxPerSec : 0;
+  clearSavedCarouselState();
+  return normalizedPhasePx;
+}
+
 function clearCarouselClones(track) {
   const clones = track.querySelectorAll(':scope > .figure-item[data-carousel-clone="true"]');
   for (const clone of clones) {
@@ -499,12 +674,6 @@ function createCarouselClone(item) {
   }
 
   return clone;
-}
-
-function restartCarouselAnimation(track) {
-  track.style.animation = 'none';
-  void track.offsetWidth;
-  track.style.animation = '';
 }
 
 function applyCarouselLoopMetrics(track, loopWidth) {
@@ -598,14 +767,25 @@ function rebuildCollectionCarousel() {
     clone.removeAttribute('data-carousel-build');
   }
 
+  const previousLoopWidth = app.carouselLastGoodLoopWidth;
+  const previousPhasePx = app.carouselPhasePx;
   applyCarouselLoopMetrics(track, loopWidth);
 
   if (app.prefersReducedMotion) {
-    track.style.animation = 'none';
+    track.style.transform = 'translate3d(0, 0, 0)';
     return true;
   }
 
-  restartCarouselAnimation(track);
+  if (app.carouselRestoreState) {
+    consumeSavedCarouselState(track);
+  } else if (Number.isFinite(previousPhasePx) && previousLoopWidth > 0) {
+    app.carouselPhasePx = normalizeCarouselPhase((previousPhasePx / previousLoopWidth) * loopWidth, loopWidth);
+  } else {
+    app.carouselPhasePx = normalizeCarouselPhase(app.carouselPhasePx, loopWidth);
+  }
+
+  track.style.transform = `translate3d(${-app.carouselPhasePx.toFixed(3)}px, 0, 0)`;
+  app.carouselMotionReady = true;
   return true;
 }
 
@@ -644,8 +824,144 @@ function setupCollectionCarousel() {
   if (!track) {
     return;
   }
+  const shell = track.closest('.carousel-shell');
+
+  if (!app.carouselInteractionBound) {
+    const maybeCaptureCarouselState = (event) => {
+      const item = event.target.closest('.figure-item[href]');
+      if (!item || !track.contains(item)) {
+        return;
+      }
+      saveCarouselState(track);
+    };
+
+    // Capture early on pointer interaction to preserve the exact animated phase.
+    track.addEventListener('pointerdown', maybeCaptureCarouselState);
+    track.addEventListener('click', maybeCaptureCarouselState);
+
+    track.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+      maybeCaptureCarouselState(event);
+    });
+
+    const stopDragging = () => {
+      app.carouselDragActive = false;
+      app.carouselDragPointerId = null;
+    };
+
+    const updateDragPhase = (clientX, nowMs) => {
+      const loopWidth = app.carouselLastGoodLoopWidth;
+      if (!Number.isFinite(loopWidth) || loopWidth <= 0) {
+        return;
+      }
+
+      const dx = clientX - app.carouselDragLastX;
+      app.carouselPhasePx = normalizeCarouselPhase(app.carouselPhasePx - dx, loopWidth);
+      track.style.transform = `translate3d(${-app.carouselPhasePx.toFixed(3)}px, 0, 0)`;
+
+      const dtMs = Math.max(1, nowMs - app.carouselDragLastTime);
+      const instantVelocity = (-dx / dtMs) * 1000;
+      app.carouselVelocityPxPerSec = lerp(app.carouselVelocityPxPerSec, instantVelocity * CAROUSEL_DRAG_BOOST, 0.55);
+      app.carouselDragLastX = clientX;
+      app.carouselDragLastTime = nowMs;
+    };
+
+    track.addEventListener('pointerdown', (event) => {
+      const item = event.target.closest('.figure-item[href]');
+      if (!item || !track.contains(item)) {
+        return;
+      }
+
+      app.carouselDragActive = true;
+      app.carouselDragPointerId = event.pointerId;
+      app.carouselDragStartX = event.clientX;
+      app.carouselDragStartY = event.clientY;
+      app.carouselDragLastX = event.clientX;
+      app.carouselDragLastTime = performance.now();
+      app.carouselVelocityPxPerSec = 0;
+      track.setPointerCapture?.(event.pointerId);
+    });
+
+    track.addEventListener('pointermove', (event) => {
+      if (!app.carouselDragActive || event.pointerId !== app.carouselDragPointerId) {
+        return;
+      }
+
+      const movedX = Math.abs(event.clientX - app.carouselDragStartX);
+      const movedY = Math.abs(event.clientY - app.carouselDragStartY);
+      if (movedX < 6 && movedY < 6) {
+        return;
+      }
+
+      if (movedX >= movedY) {
+        event.preventDefault();
+        updateDragPhase(event.clientX, performance.now());
+      }
+    });
+
+    track.addEventListener('pointerup', (event) => {
+      if (event.pointerId !== app.carouselDragPointerId) {
+        return;
+      }
+
+      if (app.carouselDragActive) {
+        const movedX = Math.abs(event.clientX - app.carouselDragStartX);
+        const movedY = Math.abs(event.clientY - app.carouselDragStartY);
+        if (movedX >= 6 || movedY >= 6) {
+          app.carouselSuppressClickUntil = performance.now() + 250;
+        }
+      }
+      stopDragging();
+      track.releasePointerCapture?.(event.pointerId);
+    });
+
+    track.addEventListener('pointercancel', stopDragging);
+
+    track.addEventListener(
+      'wheel',
+      (event) => {
+        if (!shell || !app.carouselLastGoodLoopWidth) {
+          return;
+        }
+
+        const shouldTreatAsHorizontal = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY);
+        if (!shouldTreatAsHorizontal) {
+          return;
+        }
+
+        event.preventDefault();
+
+        const delta = event.deltaX !== 0 ? event.deltaX : event.deltaY;
+        const loopWidth = app.carouselLastGoodLoopWidth;
+        app.carouselPhasePx = normalizeCarouselPhase(app.carouselPhasePx + delta * CAROUSEL_WHEEL_BOOST, loopWidth);
+        app.carouselVelocityPxPerSec = clamp(
+          app.carouselVelocityPxPerSec + delta * 2.2,
+          -CAROUSEL_PIXELS_PER_SECOND * 8,
+          CAROUSEL_PIXELS_PER_SECOND * 8
+        );
+        track.style.transform = `translate3d(${-app.carouselPhasePx.toFixed(3)}px, 0, 0)`;
+        app.carouselSuppressClickUntil = performance.now() + 120;
+      },
+      { passive: false }
+    );
+
+    track.addEventListener(
+      'click',
+      (event) => {
+        if (performance.now() < app.carouselSuppressClickUntil) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      },
+      true
+    );
+    app.carouselInteractionBound = true;
+  }
 
   track.style.animation = 'none';
+  track.style.transform = `translate3d(${-app.carouselPhasePx.toFixed(3)}px, 0, 0)`;
 
   const originalImages = Array.from(track.querySelectorAll(':scope > .figure-item img'));
   for (const image of originalImages) {
@@ -657,6 +973,33 @@ function setupCollectionCarousel() {
     app.carouselReady = true;
     scheduleCarouselRebuild();
   });
+}
+
+function updateCarouselMotion(dtMs) {
+  const track = app.carouselTrack;
+  if (!track || !app.carouselReady || !app.carouselLastGoodLoopWidth) {
+    return;
+  }
+
+  const loopWidth = app.carouselLastGoodLoopWidth;
+  const dtSec = dtMs / 1000;
+
+  if (app.prefersReducedMotion) {
+    track.style.transform = `translate3d(${-normalizeCarouselPhase(app.carouselPhasePx, loopWidth).toFixed(3)}px, 0, 0)`;
+    return;
+  }
+
+  if (!app.carouselMotionReady) {
+    app.carouselPhasePx = normalizeCarouselPhase(app.carouselPhasePx, loopWidth);
+    app.carouselMotionReady = true;
+  }
+
+  app.carouselPhasePx = normalizeCarouselPhase(
+    app.carouselPhasePx + (CAROUSEL_PIXELS_PER_SECOND + app.carouselVelocityPxPerSec) * dtSec,
+    loopWidth
+  );
+  app.carouselVelocityPxPerSec = lerp(app.carouselVelocityPxPerSec, 0, clamp(dtSec * CAROUSEL_VELOCITY_FRICTION, 0, 1));
+  track.style.transform = `translate3d(${-app.carouselPhasePx.toFixed(3)}px, 0, 0)`;
 }
 
 function updateProgress(nowMs) {
@@ -1094,6 +1437,7 @@ function loop(nowMs) {
   app.lastFrameTime = nowMs;
 
   updateProgress(nowMs);
+  updateCarouselMotion(dtMs);
 
   if (app.rendererType === 'webgl') {
     updateAdaptiveTier(nowMs, dtMs);
@@ -1227,7 +1571,8 @@ async function prepareWordmarkData() {
     });
 
     const desiredWorldWidth = 10.8;
-    const tracedHeight = clamp(desiredWorldWidth / traced.aspect, 1.18, 2.45);
+    const mobileScale = isMobileProfile() ? 0.62 : 1.0;
+    const tracedHeight = clamp(desiredWorldWidth / traced.aspect, 1.18, 2.45) * mobileScale;
 
     app.wordmarkSvgData = traced.svg;
     const tracedHighTargets = traced.createTargets({
@@ -1282,13 +1627,14 @@ async function prepareWordmarkData() {
     console.warn('PNG wordmark tracing failed; using geometric fallback.', error);
   }
 
+  const geoMobileScale = isMobileProfile() ? 0.62 : 1.0;
   app.wordmarkSvgData = createSebastianWordmarkSvg({ tracking: 0.08, padding: 0.09 });
   app.wordmarkTargetsHigh = createSebastianTargets({
     targetCount: maxCubes,
     sampleStep: 0.032,
     minSpacing: 0.018,
     tracking: 0.08,
-    height: 1.3,
+    height: 1.3 * geoMobileScale,
     depthJitter: 0.03,
     seed: 73,
   });
@@ -1297,7 +1643,7 @@ async function prepareWordmarkData() {
     sampleStep: 0.039,
     minSpacing: 0.022,
     tracking: 0.08,
-    height: 1.28,
+    height: 1.28 * geoMobileScale,
     depthJitter: 0.01,
     seed: 13,
   });
@@ -1321,6 +1667,7 @@ async function preloadWordmarkFont() {
 
 async function init() {
   document.body.classList.add('intro-managed');
+  loadSavedCarouselState();
   updateRanges();
   setupCollectionCarousel();
   if (app.forceMaxProfile) {

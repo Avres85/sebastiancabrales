@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ITEM_NAME}} | Review</title>
+    <link rel="stylesheet" href="./review.css?v=20260404c" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="back-link" href="../index.html#collection">Back to Collection</a>
+        <p class="page-label">Figure Review Template</p>
+      </header>
+
+      <section class="hero">
+        <figure class="hero-media">
+          <img src="{{IMAGE_SRC}}" alt="{{ITEM_NAME}} product image" loading="eager" decoding="async" />
+        </figure>
+
+        <div class="hero-copy">
+          <p class="kicker">{{CATEGORY}}</p>
+          <h1 class="title">{{ITEM_NAME}}</h1>
+          <p class="lede">
+            {{SHORT_SUMMARY}}
+          </p>
+
+          <div class="swatches">
+            <span class="swatch" style="background: {{SWATCH_A}}"></span>
+            <span class="swatch" style="background: {{SWATCH_B}}"></span>
+            <span class="swatch" style="background: {{SWATCH_C}}"></span>
+          </div>
+
+          <dl class="spec-list">
+            <div class="spec-item">
+              <dt class="spec-key">Maker</dt>
+              <dd class="spec-value">{{MAKER}}</dd>
+            </div>
+            <div class="spec-item">
+              <dt class="spec-key">Scale</dt>
+              <dd class="spec-value">{{SCALE}}</dd>
+            </div>
+            <div class="spec-item">
+              <dt class="spec-key">Status</dt>
+              <dd class="spec-value">{{STATUS}}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="section-grid">
+        <article class="panel">
+          <h2 class="panel-title">Overview</h2>
+          <p>{{OVERVIEW}}</p>
+        </article>
+
+        <article class="panel alt">
+          <h2 class="panel-title">Review Scores</h2>
+          <div class="rating-grid">
+            <div class="rating-item">
+              <span class="rating-key">Engineering</span>
+              <span class="rating-value">{{ENGINEERING_SCORE}}</span>
+            </div>
+            <div class="rating-item">
+              <span class="rating-key">Finish</span>
+              <span class="rating-value">{{FINISH_SCORE}}</span>
+            </div>
+            <div class="rating-item">
+              <span class="rating-key">Presence</span>
+              <span class="rating-value">{{PRESENCE_SCORE}}</span>
+            </div>
+            <div class="rating-item">
+              <span class="rating-key">Value</span>
+              <span class="rating-value">{{VALUE_SCORE}}</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <h2 class="panel-title">Pros</h2>
+          <ul class="list">
+            <li>{{PRO_1}}</li>
+            <li>{{PRO_2}}</li>
+            <li>{{PRO_3}}</li>
+          </ul>
+        </article>
+
+        <article class="panel">
+          <h2 class="panel-title">Cons</h2>
+          <ul class="list">
+            <li>{{CON_1}}</li>
+            <li>{{CON_2}}</li>
+            <li>{{CON_3}}</li>
+          </ul>
+        </article>
+
+        <article class="panel alt">
+          <h2 class="panel-title">Personal Verdict</h2>
+          <p>{{VERDICT}}</p>
+        </article>
+
+        <article class="panel">
+          <h2 class="panel-title">Next Actions</h2>
+          <p>{{NEXT_ACTIONS}}</p>
+        </article>
+      </section>
+
+      <footer class="footer-nav">
+        <a class="nav-link" href="../index.html#collection">Return to Portfolio</a>
+        <a class="nav-link" href="{{NEXT_PAGE_LINK}}">Next Review</a>
+      </footer>
+    </div>
+  </body>
+</html>
