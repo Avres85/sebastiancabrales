@@ -17,6 +17,7 @@ const INTRO_HEIGHT_VH = 260;
 const LOCK_COUNT_FREEZE_PROGRESS = 0.72;
 const CONTENT_REVEAL_RAW_PROGRESS = 0.999;
 const DEBUG_TARGETS = false;
+const SCROLL_PROGRESS_DAMPING = 18;
 const CAROUSEL_PIXELS_PER_SECOND = 12.5;
 const CAROUSEL_WHEEL_BOOST = 0.9;
 const CAROUSEL_DRAG_BOOST = 1.1;
@@ -88,6 +89,7 @@ const app = {
   activeRangePx: window.innerHeight * (ACTIVE_SCROLL_VH / 100),
   holdRangePx: window.innerHeight * (HOLD_SCROLL_VH / 100),
   progress: 0,
+  targetProgress: 0,
   rawProgress: 0,
   actualRawProgress: 0,
   lastRawProgress: 0,
@@ -326,6 +328,10 @@ function clamp(value, min, max) {
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
+}
+
+function damp(current, target, lambda, dtMs) {
+  return lerp(current, target, 1 - Math.exp(-lambda * (dtMs / 1000)));
 }
 
 function smoothstep(edge0, edge1, x) {
@@ -1002,7 +1008,7 @@ function updateCarouselMotion(dtMs) {
   track.style.transform = `translate3d(${-app.carouselPhasePx.toFixed(3)}px, 0, 0)`;
 }
 
-function updateProgress(nowMs) {
+function updateProgress(nowMs, dtMs) {
   const raw = computeRawProgress();
   const downwards = raw >= app.lastRawProgress;
   app.actualRawProgress = raw;
@@ -1039,7 +1045,8 @@ function updateProgress(nowMs) {
     return;
   }
 
-  app.progress = smoothstep(0, 1, heldRaw);
+  app.targetProgress = smoothstep(0, 1, heldRaw);
+  app.progress = damp(app.progress, app.targetProgress, SCROLL_PROGRESS_DAMPING, dtMs);
   updateIntroLightProgress();
   updateContentRevealState();
   flushPendingTierCountChange();
@@ -1436,7 +1443,7 @@ function loop(nowMs) {
   const dtMs = clamp(nowMs - app.lastFrameTime, 1, 64);
   app.lastFrameTime = nowMs;
 
-  updateProgress(nowMs);
+  updateProgress(nowMs, dtMs);
   updateCarouselMotion(dtMs);
 
   if (app.rendererType === 'webgl') {
