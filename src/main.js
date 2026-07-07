@@ -68,6 +68,8 @@ function isChromeClient() {
 
 const elements = {
   intro: document.getElementById('intro'),
+  poster: document.getElementById('poster'),
+  posterNoise: document.querySelector('.poster-noise'),
   glCanvas: document.getElementById('gl-canvas'),
   fallbackCanvas: document.getElementById('fallback-canvas'),
   staticFallback: document.getElementById('static-fallback'),
@@ -132,6 +134,7 @@ const app = {
   carouselInteractionBound: false,
   carouselRestoreState: null,
   carouselRestoreApplied: false,
+  starfieldRafId: 0,
   forceMaxProfile: isChromeClient(),
   maxCubes: BASE_MAX_CUBES,
   minInteriorCount: BASE_MIN_INTERIOR_COUNT,
@@ -1454,12 +1457,208 @@ function updatePointerSmoothing() {
   app.pointerY = lerp(app.pointerY, app.pointerYTarget, 0.08);
 }
 
+// Deterministic PRNG so the star scatter is identical on every visit.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pickStarColor(rng) {
+  const roll = rng();
+  if (roll < 0.45) return '255, 255, 255';
+  if (roll < 0.75) return '215, 232, 255';
+  if (roll < 0.92) return '185, 215, 245';
+  if (roll < 0.97) return '175, 210, 250';
+  return '255, 228, 190';
+}
+
+function drawStar(ctx, x, y, radius, color, alpha) {
+  ctx.fillStyle = `rgba(${color}, ${alpha.toFixed(3)})`;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Paints the seeded starfield: a couple hundred stars, never tiled. Roughly
+// two thirds are drawn from a soft gaussian band through the center-left
+// (the "distant galactic dust" of the reference), the rest scattered
+// uniformly. Every star stays a sharp pinpoint — no halos or bloom.
+function paintStarCanvas(width, height, dpr, seed, count, options = {}) {
+  const {
+    bandRatio = 0.65,
+    minAlpha = 0.35,
+    maxAlpha = 1,
+    brightBias = 0,
+    focusX = 0.4,
+    focusY = 0.46,
+    spreadX = 0.24,
+    spreadY = 0.19,
+    bandAngle = -0.2,
+    tiny = false,
+  } = options;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * dpr));
+  canvas.height = Math.max(1, Math.round(height * dpr));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return null;
+  }
+  ctx.scale(dpr, dpr);
+
+  const rng = mulberry32(seed);
+  const cosA = Math.cos(bandAngle);
+  const sinA = Math.sin(bandAngle);
+
+  for (let i = 0; i < count; i += 1) {
+    let x;
+    let y;
+
+    if (rng() < bandRatio) {
+      // Box-Muller gaussian around the band center, rotated slightly.
+      const u = Math.max(rng(), 1e-6);
+      const v = rng();
+      const mag = Math.sqrt(-2 * Math.log(u));
+      const gx = mag * Math.cos(2 * Math.PI * v) * width * spreadX;
+      const gy = mag * Math.sin(2 * Math.PI * v) * height * spreadY;
+      x = width * focusX + gx * cosA - gy * sinA;
+      y = height * focusY + gx * sinA + gy * cosA;
+    } else {
+      x = rng() * width;
+      y = rng() * height;
+    }
+
+    if (x < 1 || x > width - 1 || y < 1 || y > height - 1) {
+      continue;
+    }
+
+    const sizeRoll = rng();
+    let radius;
+    if (tiny) {
+      radius = 0.16 + rng() * 0.38;
+    } else if (sizeRoll < 0.85 - brightBias) {
+      radius = 0.45 + rng() * 0.55;
+    } else {
+      radius = 1.0 + rng() * 0.6;
+    }
+
+    const alpha = clamp(minAlpha + rng() * (maxAlpha - minAlpha), 0, 1);
+    drawStar(ctx, x, y, radius, pickStarColor(rng), alpha);
+  }
+
+  return canvas.toDataURL();
+}
+
+// Renders the base field, lower-right dust cluster, diagonal dust band, and
+// sparse twinkle tier into .poster-noise. Regenerated on resize so pinpoints
+// stay one-pixel sharp instead of being rescaled.
+function generateStarfield() {
+  const noise = elements.posterNoise;
+  if (!noise) {
+    return;
+  }
+
+  // Match the CSS inset: -24px over-extension used for parallax slack.
+  const width = window.innerWidth + 48;
+  const height = window.innerHeight + 48;
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+
+  const mainUrl = paintStarCanvas(width, height, dpr, 1337, 230);
+  const extraFieldUrl = paintStarCanvas(width, height, dpr, 6181, 100, {
+    bandRatio: 0,
+    minAlpha: 0.26,
+    maxAlpha: 0.86,
+    brightBias: 0.18,
+  });
+  const dustStarCount = isMobileProfile() ? 4160 : 9600;
+  const dustUrl = paintStarCanvas(width, height, dpr, 9027, dustStarCount, {
+    bandRatio: 0.98,
+    minAlpha: 0.16,
+    maxAlpha: 0.58,
+    focusX: 0.86,
+    focusY: 0.8,
+    spreadX: 0.105,
+    spreadY: 0.072,
+    bandAngle: -0.34,
+    tiny: true,
+  });
+  const diagonalDustCount = isMobileProfile() ? 3000 : 7200;
+  const diagonalDustUrl = paintStarCanvas(width, height, dpr, 7349, diagonalDustCount, {
+    bandRatio: 0.99,
+    minAlpha: 0.13,
+    maxAlpha: 0.5,
+    focusX: 0.69,
+    focusY: 0.64,
+    spreadX: 0.18,
+    spreadY: 0.045,
+    bandAngle: 0.72,
+    tiny: true,
+  });
+  const twinkleUrl = paintStarCanvas(width, height, dpr, 4211, 28, {
+    bandRatio: 1,
+    minAlpha: 0.72,
+    maxAlpha: 1,
+    brightBias: 0.72,
+    focusX: 0.72,
+    focusY: 0.63,
+    spreadX: 0.2,
+    spreadY: 0.1,
+    bandAngle: 0.72,
+  });
+
+  if (mainUrl) {
+    noise.style.backgroundImage = extraFieldUrl ? `url(${extraFieldUrl}), url(${mainUrl})` : `url(${mainUrl})`;
+  }
+  if (dustUrl) {
+    noise.style.setProperty('--nebula-dust-stars', `url(${dustUrl})`);
+  }
+  if (diagonalDustUrl) {
+    noise.style.setProperty('--nebula-diagonal-stars', `url(${diagonalDustUrl})`);
+  }
+  if (twinkleUrl) {
+    noise.style.setProperty('--twinkle-stars', `url(${twinkleUrl})`);
+  }
+}
+
+function scheduleStarfieldRebuild() {
+  if (app.starfieldRafId) {
+    cancelAnimationFrame(app.starfieldRafId);
+  }
+  app.starfieldRafId = requestAnimationFrame(() => {
+    app.starfieldRafId = 0;
+    generateStarfield();
+  });
+}
+
+// Feed the smoothed pointer and intro progress to the CSS backdrop layers
+// (nebula / starfield / glints) so they parallax against the shard swarm.
+function updateBackdropParallax() {
+  const poster = elements.poster;
+  if (!poster) {
+    return;
+  }
+
+  if (app.prefersReducedMotion) {
+    poster.style.setProperty('--par-x', '0');
+    poster.style.setProperty('--par-y', '0');
+    poster.style.setProperty('--par-scroll', '0');
+    return;
+  }
+
+  poster.style.setProperty('--par-x', app.pointerX.toFixed(4));
+  poster.style.setProperty('--par-y', app.pointerY.toFixed(4));
+  poster.style.setProperty('--par-scroll', app.progress.toFixed(4));
+}
+
 function renderWebGL(nowMs) {
   if (!app.renderer || !app.camera || !app.uniforms) {
     return;
   }
-
-  updatePointerSmoothing();
 
   app.uniforms.uTime.value = nowMs * 0.001;
   app.uniforms.uProgress.value = app.progress;
@@ -1546,6 +1745,8 @@ function loop(nowMs) {
   app.lastFrameTime = nowMs;
 
   updateProgress(nowMs, dtMs);
+  updatePointerSmoothing();
+  updateBackdropParallax();
   updateCarouselMotion(dtMs);
 
   if (app.rendererType === 'webgl') {
@@ -1612,6 +1813,7 @@ function setupResizeHandling() {
       updateRanges();
       resizeRenderer();
       resizeCanvasFallback();
+      scheduleStarfieldRebuild();
       scheduleCarouselRebuild();
     },
     { passive: true }
@@ -1783,6 +1985,7 @@ async function init() {
   document.body.classList.add('intro-managed');
   loadSavedCarouselState();
   updateRanges();
+  generateStarfield();
   setupCollectionCarousel();
   setupArchivalPlates();
   if (app.forceMaxProfile) {

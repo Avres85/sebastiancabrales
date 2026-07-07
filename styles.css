@@ -42,9 +42,9 @@ body {
   padding: 0;
   min-height: 100%;
   background:
-    radial-gradient(ellipse 62% 46% at 76% 18%, rgba(56, 128, 158, 0.14) 0%, transparent 70%),
-    radial-gradient(ellipse 52% 42% at 12% 78%, rgba(24, 62, 96, 0.12) 0%, transparent 70%),
-    linear-gradient(180deg, #060d16 0%, #030810 46%, #010306 100%);
+    radial-gradient(ellipse 62% 46% at 76% 18%, rgba(40, 106, 168, 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 52% 42% at 12% 78%, rgba(20, 54, 94, 0.1) 0%, transparent 70%),
+    linear-gradient(180deg, #030a14 0%, #01060c 46%, #000103 100%);
   color: var(--text);
   font-family: "Eurostile", "Microgramma", "Bank Gothic", "Arial Narrow", sans-serif;
 }
@@ -83,11 +83,19 @@ body.intro-complete .intro {
   top: 0;
   height: 100vh;
   overflow: hidden;
+  /* Near-black deep-navy void (blue with only a whisper of green): one
+     broad dim glow through the central-right, with wider upper-corner
+     dark pockets and far-right edges crushed to near-true-black so the
+     frame stays uneven and cinematic. */
   background:
-    radial-gradient(115% 85% at 72% 22%, rgba(64, 138, 166, 0.16), transparent 58%),
-    radial-gradient(95% 90% at 14% 82%, rgba(22, 58, 92, 0.13), transparent 52%),
-    radial-gradient(140% 140% at 50% 42%, transparent 52%, rgba(0, 2, 5, 0.6) 100%),
-    linear-gradient(180deg, #071019 0%, #040a12 52%, #010407 100%);
+    radial-gradient(66% 60% at 100% 0%, rgba(0, 0, 2, 0.98) 0%, rgba(0, 0, 2, 0.9) 38%, transparent 76%),
+    radial-gradient(90% 75% at 64% 44%, rgba(36, 106, 176, 0.15), transparent 62%),
+    radial-gradient(78% 68% at 0% 0%, rgba(0, 0, 2, 0.98) 0%, rgba(0, 0, 2, 0.92) 34%, transparent 78%),
+    radial-gradient(58% 112% at -8% 48%, rgba(0, 0, 2, 0.96), transparent 72%),
+    radial-gradient(125% 58% at 56% -12%, rgba(0, 0, 2, 0.9), transparent 74%),
+    radial-gradient(52% 66% at 100% 46%, rgba(0, 1, 3, 0.9), transparent 74%),
+    radial-gradient(140% 140% at 50% 42%, transparent 32%, rgba(0, 0, 2, 0.98) 100%),
+    linear-gradient(180deg, #030c18 0%, #01060e 52%, #000103 100%);
 }
 
 .sticky-shell::after {
@@ -143,29 +151,215 @@ body.intro-complete .sticky-shell::after {
   transition: opacity 120ms linear;
 }
 
-.poster-noise {
+.poster::before {
+  content: "";
   position: absolute;
   inset: 0;
-  /* Tiled starfield: each layer drops one star per tile; mixed tile sizes
-     and offsets keep the repetition from reading as a grid. The two large
-     layers add a few brighter stars with a soft cold halo. */
-  background-image:
-    radial-gradient(circle, rgba(232, 244, 252, 0.9) 0 1px, transparent 1.7px),
-    radial-gradient(circle, rgba(196, 220, 240, 0.75) 0 1px, transparent 1.6px),
-    radial-gradient(circle, rgba(150, 190, 220, 0.6) 0 0.9px, transparent 1.4px),
-    radial-gradient(circle, rgba(120, 165, 205, 0.5) 0 0.8px, transparent 1.3px),
-    radial-gradient(circle, rgba(214, 240, 252, 0.95) 0 1.3px, rgba(110, 185, 230, 0.28) 0 2.4px, transparent 3.2px),
-    radial-gradient(circle, rgba(200, 232, 250, 0.85) 0 1.1px, rgba(90, 160, 210, 0.22) 0 2.1px, transparent 2.9px);
-  background-position: 13% 21%, 67% 74%, 41% 53%, 89% 37%, 23% 82%, 76% 9%;
-  background-size: 420px 380px, 310px 280px, 230px 210px, 170px 150px, 860px 760px, 640px 560px;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 66% 58% at 100% 0%,
+      rgba(0, 0, 2, 0.94) 0%,
+      rgba(0, 0, 2, 0.72) 36%,
+      rgba(0, 0, 2, 0.3) 58%,
+      transparent 78%
+    ),
+    radial-gradient(
+      ellipse 70% 64% at 0% 0%,
+      rgba(0, 0, 2, 0.96) 0%,
+      rgba(0, 0, 2, 0.78) 33%,
+      rgba(0, 0, 2, 0.34) 58%,
+      transparent 78%
+    );
+  mix-blend-mode: multiply;
+  opacity: calc(1 - var(--intro-light-progress));
+}
+
+/* ---------------------------------------------------------------------
+   Deep-space backdrop layers (bottom to top): .poster-nebula gas clouds,
+   .poster-noise star carpet plus lower-right dust cluster, .poster-grain film grain.
+   All fade out with --intro-light-progress and take a small pointer/scroll
+   parallax from --par-x / --par-y / --par-scroll (set by main.js on
+   #poster; layers move opposite the shards, less for farther layers).
+   Layers over-extend past the viewport so parallax never exposes edges. */
+
+.poster-nebula {
+  position: absolute;
+  inset: -6%;
+  pointer-events: none;
+  transform: translate3d(
+    calc(var(--par-x, 0) * -6px),
+    calc(var(--par-y, 0) * 4px + var(--par-scroll, 0) * -12px),
+    0
+  );
+  opacity: calc(1 - var(--intro-light-progress));
+}
+
+.poster-nebula::before,
+.poster-nebula::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  mix-blend-mode: screen;
+}
+
+/* Smoky deep-navy gas mass: low-frequency fractal noise flooded a muted
+   deep blue, masked to a broad dim glow through the central-right with
+   an added lower-right pocket; the hard black around it remains intact. */
+.poster-nebula::before {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='1600' height='1000'><filter id='d' x='0%25' y='0%25' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.0016 0.0026' numOctaves='4' seed='23' stitchTiles='stitch' result='n'/><feColorMatrix in='n' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.7 0.7 0.4 0 -0.5' result='m'/><feComponentTransfer in='m' result='m2'><feFuncA type='gamma' amplitude='1' exponent='1.35' offset='0'/></feComponentTransfer><feFlood flood-color='%2313657c' result='c'/><feComposite in='c' in2='m2' operator='in'/></filter><rect width='1600' height='1000' filter='url(%23d)'/></svg>");
+  opacity: 0.6;
+  -webkit-mask-image:
+    radial-gradient(ellipse 72% 58% at 66% 45%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.5) 48%, transparent 76%),
+    radial-gradient(ellipse 54% 42% at 86% 80%, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.48) 44%, transparent 74%);
+  mask-image:
+    radial-gradient(ellipse 72% 58% at 66% 45%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.5) 48%, transparent 76%),
+    radial-gradient(ellipse 54% 42% at 86% 80%, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.48) 44%, transparent 74%);
+  animation: nebula-drift-slow 170s ease-in-out infinite alternate;
+}
+
+/* Pale-blue wisps: higher-frequency noise with a softer gamma so the
+   patches read as uneven smoke fading into darkness, not torn edges. */
+.poster-nebula::after {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='1600' height='1000'><filter id='w' x='0%25' y='0%25' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.0034 0.0048' numOctaves='5' seed='7' stitchTiles='stitch' result='n'/><feColorMatrix in='n' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.55 0.85 0.45 0 -0.62' result='m'/><feComponentTransfer in='m' result='m2'><feFuncA type='gamma' amplitude='1' exponent='1.5' offset='0'/></feComponentTransfer><feFlood flood-color='%232f9ebc' result='c'/><feComposite in='c' in2='m2' operator='in'/></filter><rect width='1600' height='1000' filter='url(%23w)'/></svg>");
+  opacity: 0.48;
+  -webkit-mask-image:
+    radial-gradient(ellipse 64% 50% at 62% 38%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.5) 48%, transparent 76%),
+    radial-gradient(ellipse 50% 36% at 88% 82%, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.46) 42%, transparent 72%);
+  mask-image:
+    radial-gradient(ellipse 64% 50% at 62% 38%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.5) 48%, transparent 76%),
+    radial-gradient(ellipse 50% 36% at 88% 82%, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.46) 42%, transparent 72%);
+  animation: nebula-drift 115s ease-in-out infinite alternate;
+}
+
+/* Drift animates the individual translate/scale properties so it composes
+   with the parallax transform on the parent instead of fighting it. */
+@keyframes nebula-drift {
+  from {
+    translate: -1.6% 0.9%;
+    scale: 1.05;
+  }
+  to {
+    translate: 1.8% -1.2%;
+    scale: 1.12;
+  }
+}
+
+@keyframes nebula-drift-slow {
+  from {
+    translate: 1.2% -0.6%;
+    scale: 1.09;
+  }
+  to {
+    translate: -1.4% 1%;
+    scale: 1.02;
+  }
+}
+
+.poster-noise {
+  position: absolute;
+  inset: -24px;
+  /* Star canvas painted by generateStarfield() in main.js: a seeded scatter
+     of a couple hundred stars — no tiling, so the field never repeats.
+     Density peaks in a soft band through the center-left like distant
+     galactic dust; most stars are sharp pinpoints, a few carry halos. */
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  transform: translate3d(
+    calc(var(--par-x, 0) * -10px),
+    calc(var(--par-y, 0) * 7px + var(--par-scroll, 0) * -18px),
+    0
+  );
   /* Stars fade out with the dark-to-light intro transition. */
-  opacity: calc(0.9 * (1 - var(--intro-light-progress)));
+  opacity: calc(0.92 * (1 - var(--intro-light-progress)));
+}
+
+.poster-noise::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--nebula-dust-stars, none), var(--nebula-diagonal-stars, none);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  -webkit-mask-image: radial-gradient(
+    ellipse 64% 50% at 73% 66%,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.78) 34%,
+    rgba(0, 0, 0, 0.26) 64%,
+    transparent 82%
+  );
+  mask-image: radial-gradient(
+    ellipse 64% 50% at 73% 66%,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.78) 34%,
+    rgba(0, 0, 0, 0.26) 64%,
+    transparent 82%
+  );
+  opacity: 0.95;
+}
+
+/* Restrained twinkle: a sparse second canvas of brighter stars that slowly
+   breathes; parent opacity multiplies in, so the intro fade still applies. */
+.poster-noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--twinkle-stars, none);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  animation: star-twinkle 7s ease-in-out infinite alternate;
+}
+
+@keyframes star-twinkle {
+  from {
+    opacity: 0.18;
+  }
+  55% {
+    opacity: 0.85;
+  }
+  to {
+    opacity: 0.4;
+  }
+}
+
+/* Subtle film grain over the whole backdrop: fine monochrome turbulence
+   tile, overlay-blended at very low opacity so it reads as texture, not
+   noise. Static on purpose — animating grain would fight the shard motion. */
+.poster-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='g' x='0%25' y='0%25' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='5' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='180' height='180' filter='url(%23g)'/></svg>");
+  background-size: 180px 180px;
+  mix-blend-mode: overlay;
+  opacity: calc(0.07 * (1 - var(--intro-light-progress)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .poster-nebula,
+  .poster-noise {
+    transform: none;
+  }
+
+  .poster-nebula::before,
+  .poster-nebula::after,
+  .poster-noise::after {
+    animation: none;
+  }
 }
 
 .poster-wordmark,
 .static-fallback {
   display: grid;
   place-items: center;
+}
+
+.poster-wordmark {
+  position: relative;
+  z-index: 3;
 }
 
 .wordmark-svg {
