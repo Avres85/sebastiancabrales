@@ -42,9 +42,9 @@ body {
   padding: 0;
   min-height: 100%;
   background:
-    radial-gradient(circle at 8% 72%, rgba(142, 121, 255, 0.2) 0%, transparent 34%),
-    radial-gradient(circle at 82% 24%, rgba(103, 199, 255, 0.24) 0%, transparent 36%),
-    linear-gradient(180deg, var(--deep-space-navy) 0%, var(--midnight-metal) 44%, var(--void-black) 100%);
+    radial-gradient(ellipse 62% 46% at 76% 18%, rgba(56, 128, 158, 0.14) 0%, transparent 70%),
+    radial-gradient(ellipse 52% 42% at 12% 78%, rgba(24, 62, 96, 0.12) 0%, transparent 70%),
+    linear-gradient(180deg, #060d16 0%, #030810 46%, #010306 100%);
   color: var(--text);
   font-family: "Eurostile", "Microgramma", "Bank Gothic", "Arial Narrow", sans-serif;
 }
@@ -84,9 +84,10 @@ body.intro-complete .intro {
   height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(125% 105% at 10% 80%, rgba(142, 121, 255, 0.2), transparent 52%),
-    radial-gradient(100% 110% at 84% 18%, rgba(103, 199, 255, 0.19), transparent 48%),
-    linear-gradient(180deg, var(--deep-space-navy) 0%, var(--midnight-metal) 54%, var(--void-black) 100%);
+    radial-gradient(115% 85% at 72% 22%, rgba(64, 138, 166, 0.16), transparent 58%),
+    radial-gradient(95% 90% at 14% 82%, rgba(22, 58, 92, 0.13), transparent 52%),
+    radial-gradient(140% 140% at 50% 42%, transparent 52%, rgba(0, 2, 5, 0.6) 100%),
+    linear-gradient(180deg, #071019 0%, #040a12 52%, #010407 100%);
 }
 
 .sticky-shell::after {
@@ -145,14 +146,20 @@ body.intro-complete .sticky-shell::after {
 .poster-noise {
   position: absolute;
   inset: 0;
+  /* Tiled starfield: each layer drops one star per tile; mixed tile sizes
+     and offsets keep the repetition from reading as a grid. The two large
+     layers add a few brighter stars with a soft cold halo. */
   background-image:
-    radial-gradient(circle at 8% 22%, rgba(122, 158, 193, 0.24) 0 2px, transparent 2px),
-    radial-gradient(circle at 27% 71%, rgba(110, 132, 168, 0.22) 0 2px, transparent 2px),
-    radial-gradient(circle at 74% 18%, rgba(98, 128, 162, 0.2) 0 2px, transparent 2px),
-    radial-gradient(circle at 88% 76%, rgba(111, 147, 185, 0.2) 0 2px, transparent 2px);
-  background-size: 280px 220px, 310px 260px, 260px 210px, 300px 270px;
-  filter: blur(0.6px);
-  opacity: 0.52;
+    radial-gradient(circle, rgba(232, 244, 252, 0.9) 0 1px, transparent 1.7px),
+    radial-gradient(circle, rgba(196, 220, 240, 0.75) 0 1px, transparent 1.6px),
+    radial-gradient(circle, rgba(150, 190, 220, 0.6) 0 0.9px, transparent 1.4px),
+    radial-gradient(circle, rgba(120, 165, 205, 0.5) 0 0.8px, transparent 1.3px),
+    radial-gradient(circle, rgba(214, 240, 252, 0.95) 0 1.3px, rgba(110, 185, 230, 0.28) 0 2.4px, transparent 3.2px),
+    radial-gradient(circle, rgba(200, 232, 250, 0.85) 0 1.1px, rgba(90, 160, 210, 0.22) 0 2.1px, transparent 2.9px);
+  background-position: 13% 21%, 67% 74%, 41% 53%, 89% 37%, 23% 82%, 76% 9%;
+  background-size: 420px 380px, 310px 280px, 230px 210px, 170px 150px, 860px 760px, 640px 560px;
+  /* Stars fade out with the dark-to-light intro transition. */
+  opacity: calc(0.9 * (1 - var(--intro-light-progress)));
 }
 
 .poster-wordmark,
@@ -165,7 +172,7 @@ body.intro-complete .sticky-shell::after {
   width: min(88vw, 1120px);
   height: auto;
   overflow: visible;
-  filter: drop-shadow(0 0 14px rgba(103, 199, 255, 0.24)) drop-shadow(0 0 28px rgba(142, 121, 255, 0.2));
+  filter: drop-shadow(0 0 14px rgba(103, 199, 255, 0.24)) drop-shadow(0 0 28px rgba(70, 160, 210, 0.18));
 }
 
 .wordmark-metal {

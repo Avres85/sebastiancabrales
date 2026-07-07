@@ -176,7 +176,6 @@ uniform float uReduced;
 uniform vec2 uPointer;
 
 varying vec3 vWorldPos;
-varying vec3 vWorldNormal;
 varying float vLock;
 
 float sstep(float a, float b, float x) {
@@ -257,13 +256,43 @@ void main() {
   float spin = (uTime * 0.23 + aSeed * 0.014) * (1.0 - lock * 0.82) * (1.0 - reduced);
   mat3 rot = rotY(spin) * rotX(spin * 0.58 + rand.x) * rotZ(spin * 0.39 + rand.y);
 
+  // Per-instance shard shaping: mix of near-cube chunks, long splinters,
+  // and thin plates, all cut from the same box template.
+  float shapeSel = hash(aSeed + 21.7);
+  vec3 shapeRand = hash3(aSeed * 1.31 + 7.7);
+
+  vec3 cubeStretch = vec3(1.0) + (shapeRand - 0.5) * 0.42;
+  vec3 splinterStretch = vec3(
+    1.9 + shapeRand.x * 1.3,
+    0.34 + shapeRand.y * 0.3,
+    0.42 + shapeRand.z * 0.32
+  );
+  vec3 plateStretch = vec3(
+    1.25 + shapeRand.x * 0.7,
+    1.0 + shapeRand.y * 0.55,
+    0.24 + shapeRand.z * 0.18
+  );
+
+  vec3 stretch = cubeStretch;
+  stretch = mix(stretch, splinterStretch, step(0.34, shapeSel));
+  stretch = mix(stretch, plateStretch, step(0.72, shapeSel));
+  // Compact the shards as the wordmark locks so letterforms stay crisp.
+  stretch = mix(stretch, vec3(0.9), lockTighten * 0.7);
+
+  vec3 local = position * stretch;
+  local.x += local.y * (shapeRand.y - 0.5) * 0.55 + local.z * (shapeRand.z - 0.5) * 0.35;
+  local.y += local.z * (shapeRand.x - 0.5) * 0.45;
+
+  // Per-corner jitter breaks face planarity into irregular facets.
+  vec3 cornerJitter = hash3(aSeed * 3.7 + dot(position, vec3(7.31, 11.97, 17.73)));
+  local += (cornerJitter - 0.5) * 0.3 * mix(1.0, 0.35, lockTighten);
+
   float convergenceScale = mix(1.0, 0.42, lockTighten);
-  vec3 local = position * (0.15 * aScale * convergenceScale);
+  local *= 0.15 * aScale * convergenceScale;
   vec3 transformed = rot * local + finalPos;
 
   vec4 world = modelMatrix * vec4(transformed, 1.0);
   vWorldPos = world.xyz;
-  vWorldNormal = normalize(mat3(modelMatrix) * rot * normal);
   vLock = lock;
 
   gl_Position = projectionMatrix * viewMatrix * world;
@@ -278,12 +307,14 @@ uniform float uProgress;
 uniform float uSweep;
 
 varying vec3 vWorldPos;
-varying vec3 vWorldNormal;
 varying float vLock;
 
 void main() {
-  vec3 n = normalize(vWorldNormal);
   vec3 v = normalize(cameraPosition - vWorldPos);
+  // Flat facet normals from screen-space derivatives so sheared/jittered
+  // shard faces shade as hard planes instead of interpolated cube normals.
+  vec3 n = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+  n = dot(n, v) < 0.0 ? -n : n;
 
   float facing = max(dot(n, v), 0.0);
   float fresnel = pow(1.0 - facing, 2.45);
@@ -1112,6 +1143,7 @@ function buildInstancedMesh() {
     transparent: true,
     depthWrite: true,
     depthTest: true,
+    extensions: { derivatives: true },
   });
 
   const mesh = new THREE.Mesh(geometry, material);
@@ -1421,7 +1453,16 @@ function renderCanvasFallback(nowMs) {
     const cyan = 120 + sweep * 125 + lockPhase * 20;
 
     ctx.fillStyle = `rgba(${180 + sweep * 60 + lockPhase * 12}, ${200 + sweep * 58 + lockPhase * 14}, ${cyan}, ${0.78 + lockPhase * 0.16})`;
-    ctx.fillRect(screenX - size * 0.5, screenY - size * 0.5, size, size);
+    // Seeded rotation + elongation + shear turns the rect into a shard sliver.
+    const angle = seed % 6.283;
+    const elong = 0.55 + ((seed * 0.37) % 1) * 1.5;
+    const shear = (((seed * 0.71) % 1) - 0.5) * 0.7;
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    ctx.rotate(angle);
+    ctx.transform(1, shear, 0, 1, 0, 0);
+    ctx.fillRect(-size * elong * 0.5, -size / elong * 0.5, size * elong, size / elong);
+    ctx.restore();
   }
 }
 
