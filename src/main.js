@@ -1012,6 +1012,38 @@ function setupCollectionCarousel() {
   });
 }
 
+function setupArchivalPlates() {
+  const cards = Array.from(document.querySelectorAll('.media-grid .media-card'));
+  if (!cards.length || app.prefersReducedMotion || !('IntersectionObserver' in window)) {
+    return;
+  }
+
+  for (let i = 0; i < cards.length; i += 1) {
+    cards[i].classList.add('plate-pending');
+    cards[i].style.transitionDelay = `${i * 170}ms`;
+  }
+
+  // Observe the unclipped grid, not the cards: a card clipped to zero width
+  // never intersects, so it could never trigger its own reveal.
+  const grid = cards[0].closest('.media-grid');
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) {
+          continue;
+        }
+        for (const card of cards) {
+          card.classList.add('is-revealed');
+        }
+        observer.disconnect();
+      }
+    },
+    { threshold: 0.25 }
+  );
+
+  observer.observe(grid);
+}
+
 function updateCarouselMotion(dtMs) {
   const track = app.carouselTrack;
   if (!track || !app.carouselReady || !app.carouselLastGoodLoopWidth) {
@@ -1525,6 +1557,11 @@ function setupVisibilityHandling() {
 function handleReducedMotionChange(event) {
   app.prefersReducedMotion = event.matches;
   app.uniforms?.uReduced && (app.uniforms.uReduced.value = event.matches ? 1 : 0);
+  if (event.matches) {
+    for (const card of document.querySelectorAll('.media-card.plate-pending')) {
+      card.classList.add('is-revealed');
+    }
+  }
   scheduleCarouselRebuild();
 }
 
@@ -1718,6 +1755,7 @@ async function init() {
   loadSavedCarouselState();
   updateRanges();
   setupCollectionCarousel();
+  setupArchivalPlates();
   if (app.forceMaxProfile) {
     app.maxCubes = BASE_MAX_CUBES + CHROME_EXTRA_CUBES;
     app.minEdgeCount = BASE_MIN_EDGE_COUNT + CHROME_EXTRA_EDGE_COUNT;
