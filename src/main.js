@@ -309,6 +309,32 @@ uniform float uSweep;
 varying vec3 vWorldPos;
 varying float vLock;
 
+float hashf(float n) {
+  return fract(sin(n) * 43758.5453123);
+}
+
+// Procedural deep-space environment sampled by reflection vectors:
+// mostly darkness, a broad cold glow zone, one narrow blue-white key
+// band for hard glints, and a dim counter light so silhouettes read.
+vec3 sampleEnv(vec3 dir) {
+  vec3 env = mix(
+    vec3(0.012, 0.016, 0.024),
+    vec3(0.03, 0.045, 0.07),
+    clamp(dir.y * 0.5 + 0.5, 0.0, 1.0)
+  );
+
+  float glow = pow(max(dot(dir, normalize(vec3(0.5, 0.62, 0.45))), 0.0), 3.0);
+  env += vec3(0.10, 0.22, 0.34) * glow;
+
+  float key = pow(max(dot(dir, normalize(vec3(0.3, 0.8, 0.52))), 0.0), 48.0);
+  env += vec3(1.5, 1.85, 2.2) * key;
+
+  float rim = pow(max(dot(dir, normalize(vec3(-0.65, -0.15, 0.72))), 0.0), 14.0);
+  env += vec3(0.16, 0.28, 0.38) * rim;
+
+  return env;
+}
+
 void main() {
   vec3 v = normalize(cameraPosition - vWorldPos);
   // Flat facet normals from screen-space derivatives so sheared/jittered
@@ -320,21 +346,23 @@ void main() {
   float fresnel = pow(1.0 - facing, 2.45);
   vec3 reflected = reflect(-v, n);
 
-  float specHard = pow(max(dot(reflected, normalize(vec3(0.24, 0.75, 0.6))), 0.0), 34.0);
-  float specSoft = pow(max(dot(reflected, normalize(vec3(-0.5, 0.36, 0.9))), 0.0), 10.0);
+  // Per-facet polish: some faces mirror sharply, others smear the
+  // environment, so shards read as torn metal rather than machined chrome.
+  float facetId = dot(floor(n * 24.0), vec3(1.0, 57.0, 113.0));
+  float polish = 0.55 + 0.45 * hashf(facetId);
 
-  vec3 steel0 = vec3(0.095, 0.112, 0.138);
-  vec3 steel1 = vec3(0.33, 0.37, 0.43);
-  vec3 steel2 = vec3(0.86, 0.9, 0.95);
-  vec3 steelCool = vec3(0.58, 0.69, 0.8);
+  vec3 envSharp = sampleEnv(reflected);
+  vec3 envSoft = sampleEnv(normalize(reflected + n * 0.6));
+  vec3 envRefl = mix(envSoft, envSharp, polish);
 
-  float verticalGrad = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-  vec3 chrome = mix(steel0, steel1, verticalGrad);
+  // Crushed-dark metal base: metal is blacks with blown highlights.
+  vec3 base = vec3(0.015, 0.02, 0.03);
   float brushed = sin(vWorldPos.y * 48.0 + vWorldPos.x * 9.0 + uTime * 0.2) * 0.5 + 0.5;
-  float brushedMask = brushed * 0.065;
-  chrome += vec3(brushedMask);
-  chrome = mix(chrome, steelCool, fresnel * 0.22);
-  chrome = mix(chrome, steel2, specSoft * 0.88 + specHard * 0.6);
+
+  vec3 color = base + envRefl * (0.6 + 0.5 * fresnel) * (0.85 + brushed * 0.15);
+
+  // Cold blue glare: space ambient wrapping the grazing edges.
+  color += vec3(0.10, 0.34, 0.55) * fresnel * (0.45 + 0.55 * polish);
 
   float lock = smoothstep(0.80, 1.0, uProgress);
   float preFlash = smoothstep(0.74, 0.90, uProgress) * (1.0 - smoothstep(0.90, 0.99, uProgress));
@@ -345,9 +373,10 @@ void main() {
   float lockAura = lock * (0.18 + fresnel * 0.62);
   float flashBand = exp(-pow((vWorldPos.x - sweepPos * 0.72) * 0.33, 2.0));
   float flash = preFlash * flashBand * (0.75 + fresnel * 0.45) * uSweep;
-  float polish = mix(0.0, 0.22, lock);
-  vec3 cyan = vec3(0.15, 0.68, 0.9) * (fresnel * 0.38 + sweep * 1.15 + lockAura + flash * 1.45);
-  vec3 color = chrome + cyan + vec3(specHard * (0.34 + polish) + sweep * 0.54 + lock * 0.14 + fresnel * 0.08);
+  vec3 cyan = vec3(0.15, 0.68, 0.9) * (sweep * 1.15 + lockAura + flash * 1.45);
+  color += cyan + vec3(sweep * 0.54 + lock * 0.14);
+  // Lift the locked wordmark so it stays metallic against the white page.
+  color += envRefl * lock * 0.35;
 
   gl_FragColor = vec4(color, 0.98);
 }
