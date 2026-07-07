@@ -1741,6 +1741,17 @@ function generateStarfield() {
     bandAngle: 0.72,
   });
   const nebulaBrightUrl = paintNebulaBrightStarCanvas(width, height, dpr, 9283, 500);
+  const leftMiddleNebulaUrl = paintStarCanvas(width, height, dpr, 5167, 300, {
+    bandRatio: 0.92,
+    minAlpha: 0.24,
+    maxAlpha: 0.74,
+    brightBias: 0.18,
+    focusX: 0.48,
+    focusY: 0.5,
+    spreadX: 0.22,
+    spreadY: 0.12,
+    bandAngle: 0.18,
+  });
   const brightAnchorUrl = paintBrightAnchorStars(width, height, dpr);
   const dustStarCount = isMobileProfile() ? 4160 : 9600;
   const dustUrl = paintStarCanvas(width, height, dpr, 9027, dustStarCount, {
@@ -1779,7 +1790,14 @@ function generateStarfield() {
   });
 
   if (mainUrl) {
-    const fieldLayers = [brightAnchorUrl, nebulaBrightUrl, brightScatterUrl, extraFieldUrl, mainUrl].filter(Boolean);
+    const fieldLayers = [
+      brightAnchorUrl,
+      leftMiddleNebulaUrl,
+      nebulaBrightUrl,
+      brightScatterUrl,
+      extraFieldUrl,
+      mainUrl,
+    ].filter(Boolean);
     noise.style.backgroundImage = fieldLayers.map((url) => `url(${url})`).join(', ');
   }
   if (dustUrl) {
