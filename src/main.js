@@ -1554,9 +1554,163 @@ function paintStarCanvas(width, height, dpr, seed, count, options = {}) {
   return canvas.toDataURL();
 }
 
-// Renders the base field, lower-right dust cluster, diagonal dust band, and
-// sparse twinkle tier into .poster-noise. Regenerated on resize so pinpoints
-// stay one-pixel sharp instead of being rescaled.
+function paintNebulaBrightStarCanvas(width, height, dpr, seed, count) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * dpr));
+  canvas.height = Math.max(1, Math.round(height * dpr));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return null;
+  }
+  ctx.scale(dpr, dpr);
+
+  const rng = mulberry32(seed);
+  const nebulaRatio = 0.76;
+  const pockets = [
+    { weight: 0.34, focusX: 0.63, focusY: 0.43, spreadX: 0.22, spreadY: 0.12, angle: -0.18 },
+    { weight: 0.42, focusX: 0.7, focusY: 0.64, spreadX: 0.25, spreadY: 0.08, angle: 0.72 },
+    { weight: 0.24, focusX: 0.86, focusY: 0.8, spreadX: 0.13, spreadY: 0.08, angle: -0.34 },
+  ];
+
+  function pickPocket() {
+    const roll = rng();
+    let sum = 0;
+    for (const pocket of pockets) {
+      sum += pocket.weight;
+      if (roll <= sum) {
+        return pocket;
+      }
+    }
+    return pockets[pockets.length - 1];
+  }
+
+  for (let i = 0; i < count; i += 1) {
+    let x;
+    let y;
+
+    if (rng() < nebulaRatio) {
+      const pocket = pickPocket();
+      const u = Math.max(rng(), 1e-6);
+      const v = rng();
+      const mag = Math.sqrt(-2 * Math.log(u));
+      const cosA = Math.cos(pocket.angle);
+      const sinA = Math.sin(pocket.angle);
+      const gx = mag * Math.cos(2 * Math.PI * v) * width * pocket.spreadX;
+      const gy = mag * Math.sin(2 * Math.PI * v) * height * pocket.spreadY;
+      x = width * pocket.focusX + gx * cosA - gy * sinA;
+      y = height * pocket.focusY + gx * sinA + gy * cosA;
+    } else {
+      x = rng() * width;
+      y = rng() * height;
+    }
+
+    if (x < 1 || x > width - 1 || y < 1 || y > height - 1) {
+      continue;
+    }
+
+    const radius = 0.34 + rng() * 0.92;
+    const alpha = clamp(0.44 + rng() * 0.5, 0, 0.94);
+    drawStar(ctx, x, y, radius, pickStarColor(rng), alpha);
+  }
+
+  return canvas.toDataURL();
+}
+
+function paintBrightAnchorStars(width, height, dpr) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * dpr));
+  canvas.height = Math.max(1, Math.round(height * dpr));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return null;
+  }
+  ctx.scale(dpr, dpr);
+
+  const stars = [
+    { x: 0.58, y: 0.43, radius: 1.35, alpha: 0.98, color: '255, 255, 255' },
+    { x: 0.73, y: 0.62, radius: 1.55, alpha: 0.96, color: '215, 232, 255' },
+    { x: 0.86, y: 0.78, radius: 1.2, alpha: 0.94, color: '255, 228, 190' },
+    { x: 0.66, y: 0.5, radius: 2.15, alpha: 0.95, color: '255, 255, 255' },
+    { x: 0.8, y: 0.69, radius: 2.45, alpha: 0.92, color: '215, 232, 255' },
+    { x: 0.92, y: 0.84, radius: 1.95, alpha: 0.9, color: '255, 228, 190' },
+    {
+      x: 0.69,
+      y: 0.23,
+      radius: 2.12,
+      alpha: 1,
+      color: '255, 255, 255',
+      glowRadius: 7.2,
+      glowAlpha: 0.2,
+      glareLength: 12,
+      glareAlpha: 0.28,
+    },
+    {
+      x: 0.88,
+      y: 0.79,
+      radius: 1.86,
+      alpha: 0.99,
+      color: '215, 232, 255',
+      glowRadius: 6.4,
+      glowAlpha: 0.18,
+      glareLength: 10,
+      glareAlpha: 0.24,
+    },
+  ];
+
+  for (const star of stars) {
+    const x = width * star.x;
+    const y = height * star.y;
+    if (star.glareLength) {
+      const horizontal = ctx.createLinearGradient(x - star.glareLength, y, x + star.glareLength, y);
+      horizontal.addColorStop(0, `rgba(${star.color}, 0)`);
+      horizontal.addColorStop(0.46, `rgba(${star.color}, ${star.glareAlpha})`);
+      horizontal.addColorStop(0.5, `rgba(${star.color}, ${star.glareAlpha * 1.7})`);
+      horizontal.addColorStop(0.54, `rgba(${star.color}, ${star.glareAlpha})`);
+      horizontal.addColorStop(1, `rgba(${star.color}, 0)`);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = horizontal;
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(x - star.glareLength, y);
+      ctx.lineTo(x + star.glareLength, y);
+      ctx.stroke();
+
+      const verticalLength = star.glareLength * 0.48;
+      const vertical = ctx.createLinearGradient(x, y - verticalLength, x, y + verticalLength);
+      vertical.addColorStop(0, `rgba(${star.color}, 0)`);
+      vertical.addColorStop(0.5, `rgba(${star.color}, ${star.glareAlpha * 0.9})`);
+      vertical.addColorStop(1, `rgba(${star.color}, 0)`);
+
+      ctx.strokeStyle = vertical;
+      ctx.lineWidth = 0.55;
+      ctx.beginPath();
+      ctx.moveTo(x, y - verticalLength);
+      ctx.lineTo(x, y + verticalLength);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (star.glowRadius) {
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, star.glowRadius);
+      glow.addColorStop(0, `rgba(${star.color}, ${star.glowAlpha})`);
+      glow.addColorStop(0.42, `rgba(${star.color}, ${star.glowAlpha * 0.34})`);
+      glow.addColorStop(1, `rgba(${star.color}, 0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(x, y, star.glowRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    drawStar(ctx, x, y, star.radius, star.color, star.alpha);
+  }
+
+  return canvas.toDataURL();
+}
+
+// Renders the base field, nebula-wide bright scatter, lower-right dust
+// cluster, diagonal dust band, and sparse twinkle tier into .poster-noise.
+// Regenerated on resize so pinpoints stay one-pixel sharp instead of being
+// rescaled.
 function generateStarfield() {
   const noise = elements.posterNoise;
   if (!noise) {
@@ -1575,6 +1729,19 @@ function generateStarfield() {
     maxAlpha: 0.86,
     brightBias: 0.18,
   });
+  const brightScatterUrl = paintStarCanvas(width, height, dpr, 8167, 250, {
+    bandRatio: 0.76,
+    minAlpha: 0.48,
+    maxAlpha: 0.96,
+    brightBias: 0.34,
+    focusX: 0.7,
+    focusY: 0.64,
+    spreadX: 0.26,
+    spreadY: 0.13,
+    bandAngle: 0.72,
+  });
+  const nebulaBrightUrl = paintNebulaBrightStarCanvas(width, height, dpr, 9283, 500);
+  const brightAnchorUrl = paintBrightAnchorStars(width, height, dpr);
   const dustStarCount = isMobileProfile() ? 4160 : 9600;
   const dustUrl = paintStarCanvas(width, height, dpr, 9027, dustStarCount, {
     bandRatio: 0.98,
@@ -1612,7 +1779,8 @@ function generateStarfield() {
   });
 
   if (mainUrl) {
-    noise.style.backgroundImage = extraFieldUrl ? `url(${extraFieldUrl}), url(${mainUrl})` : `url(${mainUrl})`;
+    const fieldLayers = [brightAnchorUrl, nebulaBrightUrl, brightScatterUrl, extraFieldUrl, mainUrl].filter(Boolean);
+    noise.style.backgroundImage = fieldLayers.map((url) => `url(${url})`).join(', ');
   }
   if (dustUrl) {
     noise.style.setProperty('--nebula-dust-stars', `url(${dustUrl})`);
